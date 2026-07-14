@@ -13,3 +13,6 @@ github:
 
 encryption:
   recipient: ""
+
+git:
+  cacheDir: "cache"
