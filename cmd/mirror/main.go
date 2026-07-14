@@ -11,6 +11,7 @@ import (
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/config"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/encrypt"
 	gitengine "github.com/seanh1995/forgejo-encrypt-mirror/internal/git"
+	ghclient "github.com/seanh1995/forgejo-encrypt-mirror/internal/github"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/mirror"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/queue"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/server"
@@ -46,6 +47,13 @@ func main() {
 		auth.HeaderValue = "token " + cfg.Forgejo.Token
 	}
 
+	var ghClient *ghclient.Client
+	var ghAuth gitengine.Auth
+	if cfg.GitHub.Token != "" {
+		ghClient = ghclient.NewClient(cfg.GitHub.Token)
+		ghAuth.HeaderValue = ghclient.BasicAuthHeader(cfg.GitHub.Token)
+	}
+
 	pool := queue.NewPool(jobQueue, 3, func(ctx context.Context, job queue.Job) error {
 		log.Printf("processing job %s: %s/%s@%s (%s)", job.ID, job.Owner, job.Repo, job.Branch, job.Commit)
 
@@ -76,7 +84,28 @@ func main() {
 		}
 		log.Printf("job %s: encrypted %d commit(s) for %s/%s, HEAD now %s", job.ID, result.CommitsProcessed, job.Owner, job.Repo, result.HeadCommit)
 
-		// TODO: push the encrypted history to GitHub (Phase 7).
+		if ghClient == nil {
+			log.Printf("job %s: github.token not configured, skipping push for %s/%s", job.ID, job.Owner, job.Repo)
+			return nil
+		}
+
+		ghOwner := cfg.GitHub.Owner
+		if ghOwner == "" {
+			ghOwner = job.Owner
+		}
+
+		if cfg.GitHub.AutoCreate {
+			if err := ghClient.EnsureRepository(ctx, ghOwner, job.Repo, cfg.GitHubPrivate()); err != nil {
+				return fmt.Errorf("ensure github repository: %w", err)
+			}
+		}
+
+		ghRemoteURL := ghclient.RepoURL(ghOwner, job.Repo)
+		if err := engine.PushWorkingRepo(ctx, encPath, ghRemoteURL, "HEAD:refs/heads/"+job.Branch, ghAuth); err != nil {
+			return fmt.Errorf("push encrypted history to github: %w", err)
+		}
+		log.Printf("job %s: pushed encrypted history for %s/%s to github %s/%s", job.ID, job.Owner, job.Repo, ghOwner, job.Repo)
+
 		return nil
 	})
 	pool.Start()

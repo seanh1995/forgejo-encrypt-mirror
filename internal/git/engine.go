@@ -137,6 +137,30 @@ func (e *Engine) Push(ctx context.Context, path, remoteURL, refspec string, auth
 	return nil
 }
 
+// PushWorkingRepo pushes refspec from the normal (non-bare) working
+// repository at dir - e.g. an encrypted mirror produced by
+// internal/mirror.UpdateEncryptedHistory - to remoteURL. Unlike Push, dir
+// is used as the command's working directory rather than passed via
+// --git-dir, since a working repository's --git-dir is its "<dir>/.git"
+// subdirectory, not dir itself.
+func (e *Engine) PushWorkingRepo(ctx context.Context, dir, remoteURL, refspec string, auth Auth) error {
+	args := e.withAuth(auth, "push", remoteURL, refspec)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("git: push %s from %s: %v: %s", refspec, dir, err, strings.TrimSpace(stderr.String()))
+	}
+
+	return nil
+}
+
 // run executes git with the given arguments. If dir is non-empty, it is
 // passed as --git-dir so the command operates on that bare repository
 // without needing a working tree or process-wide chdir.
