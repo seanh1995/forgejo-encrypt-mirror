@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"log"
 	"net/http"
 	"time"
@@ -49,6 +50,11 @@ func Start(ctx context.Context, cfg Config) error {
 	}
 	mux.Handle("/webhook", webhookHandler)
 
+	if cfg.Queue != nil {
+		mux.HandleFunc("GET /status", statusListHandler(cfg.Queue))
+		mux.HandleFunc("GET /status/{id}", statusHandler(cfg.Queue))
+	}
+
 	srv := &http.Server{
 		Addr:    cfg.Address,
 		Handler: mux,
@@ -72,5 +78,34 @@ func Start(ctx context.Context, cfg Config) error {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
+	}
+}
+
+// statusHandler returns the status record for a single job by ID.
+func statusHandler(q *queue.Queue) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+
+		rec, ok := q.Status(id)
+		if !ok {
+			http.Error(w, "job not found", http.StatusNotFound)
+			return
+		}
+
+		writeJSON(w, rec)
+	}
+}
+
+// statusListHandler returns status records for all known jobs.
+func statusListHandler(q *queue.Queue) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, q.Statuses())
+	}
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	if err := json.NewEncoder(w).Encode(v); err != nil {
+		log.Printf("server: failed to encode JSON response: %v", err)
 	}
 }
