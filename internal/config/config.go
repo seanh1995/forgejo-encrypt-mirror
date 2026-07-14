@@ -21,6 +21,10 @@ type Config struct {
 		Owner      string `yaml:"owner"`
 		Token      string `yaml:"token"`
 		AutoCreate bool   `yaml:"autoCreate"`
+		// Private controls the visibility of GitHub repositories created
+		// via AutoCreate. Defaults to true (private) if unset, since these
+		// repositories hold encrypted backups.
+		Private *bool `yaml:"private"`
 	} `yaml:"github"`
 
 	Encryption struct {
@@ -51,4 +55,15 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// GitHubPrivate reports whether GitHub repositories created via
+// GitHub.AutoCreate should be private. Defaults to true (private) when
+// GitHub.Private is unset, since these repositories hold encrypted
+// backups.
+func (c *Config) GitHubPrivate() bool {
+	if c.GitHub.Private == nil {
+		return true
+	}
+	return *c.GitHub.Private
 }
