@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/url"
 	"os"
 	"os/signal"
@@ -16,25 +16,41 @@ import (
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/encrypt"
 	gitengine "github.com/seanh1995/forgejo-encrypt-mirror/internal/git"
 	ghclient "github.com/seanh1995/forgejo-encrypt-mirror/internal/github"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/logging"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/metrics"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/mirror"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/queue"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/server"
 )
 
+// version is the build version, set at build time via
+// -ldflags "-X main.version=...". Defaults to "dev" for local builds.
+var version = "dev"
+
 func main() {
+	logging.Init()
 
 	cfg, err := config.Load("configs/config.yaml")
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("load configuration", "error", err)
+		os.Exit(1)
 	}
 
-	log.Println("starting forgejo encrypt mirror")
+	if err := cfg.Validate(); err != nil {
+		slog.Error("invalid configuration", "error", err)
+		os.Exit(1)
+	}
+
+	metrics.BuildInfo.WithLabelValues(version).Set(1)
+
+	slog.Info("starting forgejo encrypt mirror", "version", version)
 
 	var auditLogger *audit.Logger
 	if cfg.Server.AuditLogPath != "" {
 		auditLogger, err = audit.Open(cfg.Server.AuditLogPath)
 		if err != nil {
-			log.Fatalf("open audit log: %v", err)
+			slog.Error("open audit log", "error", err)
+			os.Exit(1)
 		}
 		defer auditLogger.Close()
 	} else {
@@ -46,23 +62,27 @@ func main() {
 
 	engine, err := gitengine.New(cfg.Git.CacheDir)
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("init git engine", "error", err)
+		os.Exit(1)
 	}
 
 	recipients, err := encrypt.LoadRecipients(cfg.Encryption.Recipient)
 	if err != nil {
-		log.Fatalf("encryption config: %v", err)
+		slog.Error("load encryption recipients", "error", err)
+		os.Exit(1)
 	}
-	log.Printf("loaded %d encryption recipient(s)", len(recipients))
+	slog.Info("loaded encryption recipients", "count", len(recipients))
 
 	rotationStatePath := filepath.Join(cfg.Git.CacheDir, encrypt.RotationStateFileName)
 	rotated, _, err := encrypt.DetectRotation(rotationStatePath, recipients)
 	if err != nil {
-		log.Fatalf("encryption rotation check: %v", err)
+		slog.Error("encryption rotation check", "error", err)
+		os.Exit(1)
 	}
 	if rotated {
-		log.Println("encryption recipients changed since last run; new encrypted commits will use the updated recipient set (existing history remains decryptable by whichever recipients originally encrypted it)")
+		slog.Warn("encryption recipients changed since last run; new encrypted commits will use the updated recipient set (existing history remains decryptable by whichever recipients originally encrypted it)")
 		auditLogger.Log("encryption.key_rotation", "detected", nil)
+		metrics.KeyRotations.Inc()
 	}
 
 	jobQueue := queue.New(100)
@@ -81,14 +101,16 @@ func main() {
 	}
 
 	pool := queue.NewPool(jobQueue, 3, func(ctx context.Context, job queue.Job) error {
-		log.Printf("processing job %s: %s/%s@%s (%s)", job.ID, job.Owner, job.Repo, job.Branch, job.Commit)
+		slog.Info("processing job", "job_id", job.ID, "owner", job.Owner, "repo", job.Repo, "branch", job.Branch, "commit", job.Commit)
 
 		remoteURL, err := forgejoRemoteURL(cfg.Forgejo.URL, job.Owner, job.Repo)
 		if err != nil {
 			return err
 		}
 
+		cloneDone := metrics.StageTimer("clone_fetch")
 		path, err := engine.EnsureMirror(ctx, job.Owner, job.Repo, remoteURL, auth)
+		cloneDone()
 		if err != nil {
 			return err
 		}
@@ -97,7 +119,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		log.Printf("job %s: mirrored %s/%s at %s", job.ID, job.Owner, job.Repo, commit)
+		slog.Info("mirrored repository", "job_id", job.ID, "owner", job.Owner, "repo", job.Repo, "commit", commit)
 
 		encPath, err := engine.EncryptedPath(job.Owner, job.Repo)
 		if err != nil {
@@ -108,10 +130,10 @@ func main() {
 		if err != nil {
 			return err
 		}
-		log.Printf("job %s: encrypted %d commit(s) for %s/%s, HEAD now %s", job.ID, result.CommitsProcessed, job.Owner, job.Repo, result.HeadCommit)
+		slog.Info("encrypted commits", "job_id", job.ID, "commits_processed", result.CommitsProcessed, "owner", job.Owner, "repo", job.Repo, "head_commit", result.HeadCommit)
 
 		if ghClient == nil {
-			log.Printf("job %s: github.token not configured, skipping push for %s/%s", job.ID, job.Owner, job.Repo)
+			slog.Info("github.token not configured, skipping push", "job_id", job.ID, "owner", job.Owner, "repo", job.Repo)
 			return nil
 		}
 
@@ -127,10 +149,15 @@ func main() {
 		}
 
 		ghRemoteURL := ghclient.RepoURL(ghOwner, ghRepo)
-		if err := engine.PushWorkingRepo(ctx, encPath, ghRemoteURL, "HEAD:refs/heads/"+job.Branch, ghAuth); err != nil {
-			return fmt.Errorf("push encrypted history to github: %w", err)
+		pushDone := metrics.StageTimer("github_push")
+		pushErr := engine.PushWorkingRepo(ctx, encPath, ghRemoteURL, "HEAD:refs/heads/"+job.Branch, ghAuth)
+		pushDone()
+		if pushErr != nil {
+			metrics.GithubPushes.WithLabelValues("failure").Inc()
+			return fmt.Errorf("push encrypted history to github: %w", pushErr)
 		}
-		log.Printf("job %s: pushed encrypted history for %s/%s to github %s/%s", job.ID, job.Owner, job.Repo, ghOwner, ghRepo)
+		metrics.GithubPushes.WithLabelValues("success").Inc()
+		slog.Info("pushed encrypted history to github", "job_id", job.ID, "owner", job.Owner, "repo", job.Repo, "github_owner", ghOwner, "github_repo", ghRepo)
 
 		return nil
 	})
@@ -143,9 +170,13 @@ func main() {
 		StatusToken:    cfg.Server.StatusToken,
 		Queue:          jobQueue,
 		Audit:          auditLogger,
+		Ready: func() error {
+			return gitengine.CheckAvailable()
+		},
 	})
 	if err != nil {
-		log.Fatal(err)
+		slog.Error("server error", "error", err)
+		os.Exit(1)
 	}
 }
 

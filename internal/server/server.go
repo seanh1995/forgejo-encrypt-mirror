@@ -4,12 +4,13 @@ import (
 	"context"
 	"crypto/hmac"
 	"encoding/json"
-	"log"
+	"log/slog"
 	"net/http"
 	"sync"
 	"time"
 
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/audit"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/metrics"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/queue"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/webhook"
 )
@@ -48,6 +49,14 @@ type Config struct {
 	// verification, replay detection, status endpoint access). If nil, no
 	// audit events are recorded.
 	Audit *audit.Logger
+
+	// Ready, if set, is called by GET /readyz to determine whether the
+	// service is ready to accept traffic (e.g. dependencies such as the
+	// git binary and cache directory are usable). If it returns an error,
+	// /readyz responds 503. If Ready is nil, /readyz always reports ready.
+	// Intended for use as a Docker/orchestrator readiness probe, distinct
+	// from /healthz which only reports that the process is alive.
+	Ready func() error
 }
 
 // Start builds the HTTP server and serves requests until ctx is canceled,
@@ -60,6 +69,19 @@ func Start(ctx context.Context, cfg Config) error {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("healthy"))
 	})
+
+	mux.HandleFunc("/readyz", func(w http.ResponseWriter, r *http.Request) {
+		if cfg.Ready != nil {
+			if err := cfg.Ready(); err != nil {
+				http.Error(w, "not ready: "+err.Error(), http.StatusServiceUnavailable)
+				return
+			}
+		}
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("ready"))
+	})
+
+	mux.Handle("/metrics", metrics.Handler())
 
 	webhookHandler := &webhook.Handler{
 		Secrets: cfg.WebhookSecrets,
@@ -91,7 +113,7 @@ func Start(ctx context.Context, cfg Config) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		log.Printf("server listening on %s", cfg.Address)
+		slog.Info("server listening", "address", cfg.Address)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			errCh <- err
 			return
@@ -103,7 +125,7 @@ func Start(ctx context.Context, cfg Config) error {
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		log.Println("shutting down server")
+		slog.Info("shutting down server")
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
 		return srv.Shutdown(shutdownCtx)
@@ -141,7 +163,7 @@ func requireStatusToken(token string, logger *audit.Logger, next http.HandlerFun
 }
 
 var warnStatusUnauthenticatedOnce = sync.OnceFunc(func() {
-	log.Println("server: WARNING: status.token is not configured; /status endpoints are unauthenticated")
+	slog.Warn("status.token is not configured; /status endpoints are unauthenticated")
 })
 
 // statusHandler returns the status record for a single job by ID.
@@ -169,6 +191,6 @@ func statusListHandler(q *queue.Queue) http.HandlerFunc {
 func writeJSON(w http.ResponseWriter, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	if err := json.NewEncoder(w).Encode(v); err != nil {
-		log.Printf("server: failed to encode JSON response: %v", err)
+		slog.Error("failed to encode JSON response", "error", err)
 	}
 }

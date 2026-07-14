@@ -3,10 +3,11 @@ package webhook
 import (
 	"encoding/json"
 	"io"
-	"log"
+	"log/slog"
 	"net/http"
 
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/audit"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/metrics"
 )
 
 // EnqueueFunc accepts a normalized repository event for processing (e.g. by
@@ -55,6 +56,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	body, err := io.ReadAll(io.LimitReader(r.Body, 10<<20)) // 10 MiB cap
 	if err != nil {
+		metrics.WebhookRequests.WithLabelValues("error").Inc()
 		http.Error(w, "unable to read body", http.StatusBadRequest)
 		return
 	}
@@ -65,8 +67,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	secrets := h.secrets()
 	if len(secrets) > 0 {
 		if !h.verify(r, body, secrets) {
-			log.Println("webhook: signature verification failed")
+			slog.Warn("webhook signature verification failed", "remote", remote)
 			h.audit("webhook.verify", "failure", audit.Fields{"remote": remote})
+			metrics.WebhookRequests.WithLabelValues("invalid_signature").Inc()
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
@@ -74,8 +77,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if id := deliveryID(r.Header.Get); h.Replay != nil && h.Replay.CheckAndRemember(id) {
-		log.Printf("webhook: duplicate delivery %s ignored", id)
+		slog.Warn("duplicate webhook delivery ignored", "delivery_id", id)
 		h.audit("webhook.replay", "denied", audit.Fields{"remote": remote, "deliveryId": id})
+		metrics.WebhookRequests.WithLabelValues("replay").Inc()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("duplicate ignored"))
 		return
@@ -88,6 +92,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if event != "push" {
 		// Not an error: acknowledge other event types (e.g. ping) so
 		// Forgejo doesn't treat the delivery as failed.
+		metrics.WebhookRequests.WithLabelValues("ignored").Inc()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ignored"))
 		return
@@ -95,6 +100,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	var push PushEvent
 	if err := json.Unmarshal(body, &push); err != nil {
+		metrics.WebhookRequests.WithLabelValues("error").Inc()
 		http.Error(w, "invalid payload", http.StatusBadRequest)
 		return
 	}
@@ -102,23 +108,26 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	repoEvent, ok := push.ToRepoEvent()
 	if !ok {
 		// Not a branch push (e.g. tag push) or missing info; ignore.
+		metrics.WebhookRequests.WithLabelValues("ignored").Inc()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("ignored"))
 		return
 	}
 
-	log.Printf("Repository changed: %s/%s@%s (%s)", repoEvent.Owner, repoEvent.Repo, repoEvent.Branch, repoEvent.Commit)
+	slog.Info("repository changed", "owner", repoEvent.Owner, "repo", repoEvent.Repo, "branch", repoEvent.Branch, "commit", repoEvent.Commit)
 
 	if h.Enqueue != nil {
 		if err := h.Enqueue(repoEvent); err != nil {
-			log.Printf("webhook: failed to enqueue job for %s/%s: %v", repoEvent.Owner, repoEvent.Repo, err)
+			slog.Error("failed to enqueue job", "owner", repoEvent.Owner, "repo", repoEvent.Repo, "error", err)
 			h.audit("webhook.enqueue", "failure", audit.Fields{"owner": repoEvent.Owner, "repo": repoEvent.Repo})
+			metrics.WebhookRequests.WithLabelValues("error").Inc()
 			http.Error(w, "failed to enqueue job", http.StatusServiceUnavailable)
 			return
 		}
 	}
 
 	h.audit("webhook.enqueue", "success", audit.Fields{"owner": repoEvent.Owner, "repo": repoEvent.Repo, "branch": repoEvent.Branch, "commit": repoEvent.Commit})
+	metrics.WebhookRequests.WithLabelValues("accepted").Inc()
 
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))

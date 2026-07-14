@@ -35,6 +35,17 @@ func New(cacheDir string) (*Engine, error) {
 	return &Engine{CacheDir: cacheDir}, nil
 }
 
+// CheckAvailable reports whether the git CLI is on PATH and executable. It
+// is intended for use as a readiness probe (e.g. served at /readyz),
+// distinct from a liveness check, since the service cannot do anything
+// useful without a working git binary.
+func CheckAvailable() error {
+	if _, err := exec.LookPath("git"); err != nil {
+		return fmt.Errorf("git: binary not found on PATH: %w", err)
+	}
+	return nil
+}
+
 // LocalPath returns the path to the bare mirror repository for owner/repo
 // within the cache directory. It validates owner and repo to prevent path
 // traversal.

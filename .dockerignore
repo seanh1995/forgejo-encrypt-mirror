@@ -1,0 +1,7 @@
+.git
+.gitignore
+cache/
+configs/config.yaml
+*.md
+!README.md
+.vscode/

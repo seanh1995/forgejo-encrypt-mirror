@@ -5,6 +5,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/metrics"
 )
 
 // Handler processes a single job. Returning an error causes the job to be
@@ -109,8 +111,11 @@ func (p *Pool) worker(id int) {
 func (p *Pool) process(workerID int, job Job) {
 	p.queue.setStatus(job, StatusRunning, "")
 
+	start := time.Now()
 	err := p.handler(p.ctx, job)
 	if err == nil {
+		metrics.JobDuration.Observe(time.Since(start).Seconds())
+		metrics.JobsTotal.WithLabelValues("succeeded").Inc()
 		p.queue.setStatus(job, StatusSucceeded, "")
 		return
 	}
@@ -118,12 +123,15 @@ func (p *Pool) process(workerID int, job Job) {
 	job.Attempts++
 	if job.Attempts > p.maxRetries {
 		log.Printf("worker %d: job %s failed permanently after %d attempts: %v", workerID, job.ID, job.Attempts, err)
+		metrics.JobDuration.Observe(time.Since(start).Seconds())
+		metrics.JobsTotal.WithLabelValues("failed").Inc()
 		p.queue.setStatus(job, StatusFailed, err.Error())
 		return
 	}
 
 	delay := p.backoffDelay(job.Attempts)
 	log.Printf("worker %d: job %s failed (attempt %d/%d): %v, retrying in %s", workerID, job.ID, job.Attempts, p.maxRetries, err, delay)
+	metrics.JobRetries.Inc()
 	p.queue.setStatus(job, StatusRetrying, err.Error())
 
 	p.scheduleRetry(job, delay)

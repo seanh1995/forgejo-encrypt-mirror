@@ -13,6 +13,7 @@ import (
 	"filippo.io/age"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/encrypt"
 	gitengine "github.com/seanh1995/forgejo-encrypt-mirror/internal/git"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/metrics"
 )
 
 // Result summarizes the outcome of an UpdateEncryptedHistory run.
@@ -104,8 +105,11 @@ func UpdateEncryptedHistory(ctx context.Context, engine *gitengine.Engine, sourc
 			return result, fmt.Errorf("mirror: clear working tree: %w", err)
 		}
 
-		if _, err := encrypt.Encrypt(scratchDir, encPath, recipients); err != nil {
-			return result, fmt.Errorf("mirror: encrypt tree for %s: %w", commit, err)
+		encryptDone := metrics.StageTimer("encrypt")
+		_, encErr := encrypt.Encrypt(scratchDir, encPath, recipients)
+		encryptDone()
+		if encErr != nil {
+			return result, fmt.Errorf("mirror: encrypt tree for %s: %w", commit, encErr)
 		}
 
 		newHash, err := engine.CommitAll(ctx, encPath, meta)
@@ -115,6 +119,7 @@ func UpdateEncryptedHistory(ctx context.Context, engine *gitengine.Engine, sourc
 
 		result.CommitsProcessed++
 		result.HeadCommit = newHash
+		metrics.CommitsEncrypted.Inc()
 	}
 
 	return result, nil
