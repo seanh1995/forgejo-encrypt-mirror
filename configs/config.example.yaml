@@ -12,6 +12,9 @@ github:
   autoCreate: true
 
 encryption:
+  # An age X25519 recipient public key (e.g. "age1..."), a newline-separated
+  # list of recipients, or a path to a file containing one recipient per
+  # line. Generate a keypair with: go run filippo.io/age/cmd/age-keygen@latest
   recipient: ""
 
 git:

@@ -9,6 +9,7 @@ import (
 	"syscall"
 
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/config"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/encrypt"
 	gitengine "github.com/seanh1995/forgejo-encrypt-mirror/internal/git"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/queue"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/server"
@@ -30,6 +31,12 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	recipients, err := encrypt.LoadRecipients(cfg.Encryption.Recipient)
+	if err != nil {
+		log.Fatalf("encryption config: %v", err)
+	}
+	log.Printf("loaded %d encryption recipient(s)", len(recipients))
 
 	jobQueue := queue.New(100)
 
@@ -57,7 +64,9 @@ func main() {
 		}
 		log.Printf("job %s: mirrored %s/%s at %s", job.ID, job.Owner, job.Repo, commit)
 
-		// TODO: encryption pipeline (Phase 5) + GitHub push (Phase 7).
+		// TODO: build encrypted history from the mirrored commits using
+		// recipients (Phase 6) + GitHub push (Phase 7).
+		_ = recipients
 		return nil
 	})
 	pool.Start()
