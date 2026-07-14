@@ -19,7 +19,8 @@ type Pool struct {
 	handler    Handler
 	workers    int
 	maxRetries int
-	retryDelay time.Duration
+	baseDelay  time.Duration
+	maxDelay   time.Duration
 
 	ctx    context.Context
 	cancel context.CancelFunc
@@ -35,10 +36,16 @@ func WithMaxRetries(n int) Option {
 	return func(p *Pool) { p.maxRetries = n }
 }
 
-// WithRetryDelay sets the delay before a failed job is retried. Defaults to
-// 5 seconds.
+// WithRetryDelay sets the base delay used for exponential backoff between
+// retries (attempt N waits baseDelay * 2^(N-1)). Defaults to 5 seconds.
 func WithRetryDelay(d time.Duration) Option {
-	return func(p *Pool) { p.retryDelay = d }
+	return func(p *Pool) { p.baseDelay = d }
+}
+
+// WithMaxRetryDelay caps the exponential backoff delay. Defaults to 5
+// minutes.
+func WithMaxRetryDelay(d time.Duration) Option {
+	return func(p *Pool) { p.maxDelay = d }
 }
 
 // NewPool creates a worker pool with the given number of workers that call
@@ -55,7 +62,8 @@ func NewPool(q *Queue, workers int, handler Handler, opts ...Option) *Pool {
 		handler:    handler,
 		workers:    workers,
 		maxRetries: 3,
-		retryDelay: 5 * time.Second,
+		baseDelay:  5 * time.Second,
+		maxDelay:   5 * time.Minute,
 		ctx:        ctx,
 		cancel:     cancel,
 	}
@@ -114,13 +122,34 @@ func (p *Pool) process(workerID int, job Job) {
 		return
 	}
 
-	log.Printf("worker %d: job %s failed (attempt %d/%d): %v, retrying", workerID, job.ID, job.Attempts, p.maxRetries, err)
+	delay := p.backoffDelay(job.Attempts)
+	log.Printf("worker %d: job %s failed (attempt %d/%d): %v, retrying in %s", workerID, job.ID, job.Attempts, p.maxRetries, err, delay)
 	p.queue.setStatus(job, StatusRetrying, err.Error())
 
-	p.scheduleRetry(job)
+	p.scheduleRetry(job, delay)
 }
 
-func (p *Pool) scheduleRetry(job Job) {
+// backoffDelay returns the exponential backoff delay for the given attempt
+// number (1-indexed), capped at maxDelay.
+func (p *Pool) backoffDelay(attempt int) time.Duration {
+	if attempt < 1 {
+		attempt = 1
+	}
+
+	// Guard against overflow from large attempt counts/shifts.
+	shift := attempt - 1
+	if shift > 30 {
+		shift = 30
+	}
+
+	delay := p.baseDelay * time.Duration(1<<uint(shift))
+	if delay <= 0 || delay > p.maxDelay {
+		delay = p.maxDelay
+	}
+	return delay
+}
+
+func (p *Pool) scheduleRetry(job Job, delay time.Duration) {
 	p.wg.Add(1)
 	go func() {
 		defer p.wg.Done()
@@ -128,7 +157,7 @@ func (p *Pool) scheduleRetry(job Job) {
 		select {
 		case <-p.ctx.Done():
 			return
-		case <-time.After(p.retryDelay):
+		case <-time.After(delay):
 		}
 
 		select {
