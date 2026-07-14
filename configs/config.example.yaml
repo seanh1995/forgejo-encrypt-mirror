@@ -1,10 +1,32 @@
 server:
   address: ":8080"
+  # Bearer token required to access /status and /status/{id}. These
+  # endpoints expose job details (repository names, branches, commit
+  # hashes, error messages), so set this for any deployment reachable
+  # outside a trusted network. If empty, the endpoints are unauthenticated
+  # and a warning is logged at startup.
+  statusToken: ""
+  # Path to a JSON-lines audit log recording security-relevant events
+  # (webhook signature verification, replay detection, status endpoint
+  # access, key rotation detection). If empty, audit events are written to
+  # stderr instead.
+  auditLogPath: ""
 
 forgejo:
   url: "https://forge.example.com"
   token: ""
+  # Deprecated: use webhookSecrets instead, which supports rotation. If
+  # set, it is treated as an additional valid secret alongside
+  # webhookSecrets.
   webhookSecret: ""
+  # Ordered list of currently-valid webhook secrets. To rotate without
+  # downtime: add the new secret here, update Forgejo's webhook
+  # configuration to sign with it, then remove the old secret once
+  # deliveries signed with it have stopped arriving, e.g.:
+  #   webhookSecrets:
+  #     - "new-secret"
+  #     - "old-secret"
+  webhookSecrets: []
 
 github:
   # Default destination owner/org for mirrored repositories. Used for any

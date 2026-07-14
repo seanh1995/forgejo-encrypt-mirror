@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 
 	"filippo.io/age"
@@ -55,6 +56,32 @@ func parseRecipients(data string) ([]age.Recipient, error) {
 	}
 
 	return recipients, nil
+}
+
+// stringer is implemented by age.X25519Recipient (and any other recipient
+// type that exposes its Bech32-encoded public key), used to fingerprint
+// recipients for key-rotation detection.
+type stringer interface {
+	String() string
+}
+
+// RecipientFingerprints returns a stable string identifying each of
+// recipients (its Bech32-encoded public key, e.g. "age1..."), sorted so
+// the result is independent of input order. Recipients that don't expose
+// their key as a string are represented as "unknown" so rotation is still
+// detected (any change in the recipient set changes the fingerprint list),
+// even though the specific key can't be named.
+func RecipientFingerprints(recipients []age.Recipient) []string {
+	out := make([]string, len(recipients))
+	for i, r := range recipients {
+		if s, ok := r.(stringer); ok {
+			out[i] = s.String()
+		} else {
+			out[i] = "unknown"
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 // LoadIdentities reads age identities (private keys) from a file at path,

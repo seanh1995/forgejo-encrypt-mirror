@@ -78,6 +78,15 @@ func UpdateEncryptedHistory(ctx context.Context, engine *gitengine.Engine, sourc
 	}
 	defer os.RemoveAll(scratchDir)
 
+	// The scratch dir holds decrypted source-tree contents (potentially
+	// sensitive) before encryption; restrict it to the owner only. Some
+	// platforms' default temp dir permissions are already restrictive, but
+	// this makes the guarantee explicit rather than relying on os.MkdirTemp
+	// defaults or umask.
+	if err := os.Chmod(scratchDir, 0o700); err != nil {
+		return result, fmt.Errorf("mirror: secure scratch dir: %w", err)
+	}
+
 	for _, commit := range commits {
 		meta, err := engine.GetCommitMeta(ctx, sourcePath, commit)
 		if err != nil {

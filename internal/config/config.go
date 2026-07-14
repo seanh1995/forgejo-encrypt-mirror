@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -13,12 +14,32 @@ import (
 type Config struct {
 	Server struct {
 		Address string `yaml:"address"`
+		// StatusToken, if set, is required as a bearer token to access
+		// the /status and /status/{id} endpoints. Strongly recommended
+		// for any deployment reachable outside a trusted network, since
+		// those endpoints otherwise expose job details (repository
+		// names, branches, commit hashes, error messages) to any caller.
+		StatusToken string `yaml:"statusToken"`
+		// AuditLogPath, if set, appends a JSON-lines audit log of
+		// security-relevant events (webhook verification, replay
+		// detection, status endpoint access) to the file at this path.
+		// If empty, audit events are written to stderr.
+		AuditLogPath string `yaml:"auditLogPath"`
 	} `yaml:"server"`
 
 	Forgejo struct {
-		URL           string `yaml:"url"`
-		Token         string `yaml:"token"`
+		URL   string `yaml:"url"`
+		Token string `yaml:"token"`
+		// WebhookSecret is the current webhook secret. Deprecated in
+		// favor of WebhookSecrets, which supports rotation; if set, it is
+		// treated as an additional valid secret alongside WebhookSecrets.
 		WebhookSecret string `yaml:"webhookSecret"`
+		// WebhookSecrets is the ordered list of currently-valid webhook
+		// secrets, allowing rotation without downtime: add the new
+		// secret here, update Forgejo's webhook configuration to use it,
+		// then remove the old secret once deliveries signed with it have
+		// stopped.
+		WebhookSecrets []string `yaml:"webhookSecrets"`
 	} `yaml:"forgejo"`
 
 	GitHub struct {
@@ -55,6 +76,8 @@ type Config struct {
 
 func Load(path string) (*Config, error) {
 
+	warnIfInsecurePermissions(path)
+
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -72,6 +95,40 @@ func Load(path string) (*Config, error) {
 	}
 
 	return &cfg, nil
+}
+
+// warnIfInsecurePermissions logs a warning if path (which typically holds
+// secrets such as API tokens and webhook secrets) is readable by users
+// other than its owner. This is a best-effort check: on platforms without
+// POSIX permission bits (e.g. Windows), the group/other bits reported are
+// not meaningful and this check has no effect.
+func warnIfInsecurePermissions(path string) {
+	info, err := os.Stat(path)
+	if err != nil {
+		return
+	}
+	if info.Mode().Perm()&0o077 != 0 {
+		log.Printf("config: warning: %s is readable by group/other (mode %v); consider restricting it to the owner only (e.g. chmod 600)", path, info.Mode().Perm())
+	}
+}
+
+// WebhookSecrets returns every currently-valid Forgejo webhook secret,
+// combining the deprecated single WebhookSecret field with WebhookSecrets,
+// with duplicates removed.
+func (c *Config) WebhookSecrets() []string {
+	var out []string
+	seen := make(map[string]bool)
+	add := func(s string) {
+		if s != "" && !seen[s] {
+			seen[s] = true
+			out = append(out, s)
+		}
+	}
+	add(c.Forgejo.WebhookSecret)
+	for _, s := range c.Forgejo.WebhookSecrets {
+		add(s)
+	}
+	return out
 }
 
 // GitHubPrivate reports whether GitHub repositories created via

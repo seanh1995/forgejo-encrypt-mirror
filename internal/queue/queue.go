@@ -1,6 +1,7 @@
 package queue
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -116,4 +117,44 @@ func (q *Queue) Statuses() []Record {
 		out = append(out, *rec)
 	}
 	return out
+}
+
+// PruneOlderThan removes status records for terminal jobs (succeeded or
+// failed) last updated before now.Add(-maxAge), so the in-memory status
+// map does not grow without bound over a long-running process. Pending,
+// running, and retrying jobs are never pruned regardless of age. It
+// returns the number of records removed.
+func (q *Queue) PruneOlderThan(maxAge time.Duration) int {
+	cutoff := time.Now().Add(-maxAge)
+
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	removed := 0
+	for id, rec := range q.status {
+		if (rec.Status == StatusSucceeded || rec.Status == StatusFailed) && rec.UpdatedAt.Before(cutoff) {
+			delete(q.status, id)
+			removed++
+		}
+	}
+	return removed
+}
+
+// StartCleanup launches a background goroutine that calls PruneOlderThan(maxAge)
+// every interval, until ctx is canceled. It's a convenience wrapper for
+// periodic cleanup; callers that need finer control can call
+// PruneOlderThan directly instead.
+func (q *Queue) StartCleanup(ctx context.Context, interval, maxAge time.Duration) {
+	go func() {
+		ticker := time.NewTicker(interval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				q.PruneOlderThan(maxAge)
+			}
+		}
+	}()
 }
