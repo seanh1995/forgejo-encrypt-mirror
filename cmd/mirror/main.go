@@ -89,22 +89,22 @@ func main() {
 			return nil
 		}
 
-		ghOwner := cfg.GitHub.Owner
-		if ghOwner == "" {
-			ghOwner = job.Owner
+		ghOwner, ghRepo, err := cfg.GitHubDestination(job.Owner, job.Repo)
+		if err != nil {
+			return fmt.Errorf("resolve github destination: %w", err)
 		}
 
 		if cfg.GitHub.AutoCreate {
-			if err := ghClient.EnsureRepository(ctx, ghOwner, job.Repo, cfg.GitHubPrivate()); err != nil {
+			if err := ghClient.EnsureRepository(ctx, ghOwner, ghRepo, cfg.GitHubPrivate()); err != nil {
 				return fmt.Errorf("ensure github repository: %w", err)
 			}
 		}
 
-		ghRemoteURL := ghclient.RepoURL(ghOwner, job.Repo)
+		ghRemoteURL := ghclient.RepoURL(ghOwner, ghRepo)
 		if err := engine.PushWorkingRepo(ctx, encPath, ghRemoteURL, "HEAD:refs/heads/"+job.Branch, ghAuth); err != nil {
 			return fmt.Errorf("push encrypted history to github: %w", err)
 		}
-		log.Printf("job %s: pushed encrypted history for %s/%s to github %s/%s", job.ID, job.Owner, job.Repo, ghOwner, job.Repo)
+		log.Printf("job %s: pushed encrypted history for %s/%s to github %s/%s", job.ID, job.Owner, job.Repo, ghOwner, ghRepo)
 
 		return nil
 	})

@@ -7,7 +7,27 @@ forgejo:
   webhookSecret: ""
 
 github:
-  owner: "encrypted"
+  # Default destination owner/org for mirrored repositories. Used for any
+  # Forgejo owner that has no entry in ownerMap. If both owner and ownerMap
+  # are empty, each repository is mirrored under its own Forgejo owner's
+  # name on GitHub.
+  owner: "backup"
+  # Optional per-Forgejo-owner overrides, so different Forgejo users or
+  # organizations can be routed to different GitHub destinations from a
+  # single installation, e.g.:
+  #   ownerMap:
+  #     alice: "backup"
+  #     bob: "backup"
+  #     team: "backup-org"
+  ownerMap: {}
+  # Builds the destination repository name from the source owner/repo.
+  # Supports "{owner}" and "{repo}" placeholders. Defaults to "{repo}"
+  # (name unchanged) if omitted. With owner: "backup" and
+  # repoNameFormat: "{owner}-{repo}", a single installation maps:
+  #   alice/app  -> backup/alice-app
+  #   bob/game   -> backup/bob-game
+  #   team/docs  -> backup/team-docs
+  repoNameFormat: "{owner}-{repo}"
   token: ""
   autoCreate: true
   # Visibility of repositories created via autoCreate. Defaults to true
