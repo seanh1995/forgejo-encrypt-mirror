@@ -1,0 +1,15 @@
+server:
+  address: ":8080"
+
+forgejo:
+  url: "https://forge.example.com"
+  token: ""
+  webhookSecret: ""
+
+github:
+  owner: "encrypted"
+  token: ""
+  autoCreate: true
+
+encryption:
+  recipient: ""
