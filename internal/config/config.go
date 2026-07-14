@@ -26,6 +26,10 @@ type Config struct {
 	Encryption struct {
 		Recipient string `yaml:"recipient"`
 	} `yaml:"encryption"`
+
+	Git struct {
+		CacheDir string `yaml:"cacheDir"`
+	} `yaml:"git"`
 }
 
 func Load(path string) (*Config, error) {
@@ -40,6 +44,10 @@ func Load(path string) (*Config, error) {
 	err = yaml.Unmarshal(data, &cfg)
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.Git.CacheDir == "" {
+		cfg.Git.CacheDir = "cache"
 	}
 
 	return &cfg, nil
