@@ -5,9 +5,13 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
+	"time"
 
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/audit"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/config"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/encrypt"
 	gitengine "github.com/seanh1995/forgejo-encrypt-mirror/internal/git"
@@ -26,6 +30,17 @@ func main() {
 
 	log.Println("starting forgejo encrypt mirror")
 
+	var auditLogger *audit.Logger
+	if cfg.Server.AuditLogPath != "" {
+		auditLogger, err = audit.Open(cfg.Server.AuditLogPath)
+		if err != nil {
+			log.Fatalf("open audit log: %v", err)
+		}
+		defer auditLogger.Close()
+	} else {
+		auditLogger = audit.New(os.Stderr)
+	}
+
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
@@ -40,7 +55,18 @@ func main() {
 	}
 	log.Printf("loaded %d encryption recipient(s)", len(recipients))
 
+	rotationStatePath := filepath.Join(cfg.Git.CacheDir, encrypt.RotationStateFileName)
+	rotated, _, err := encrypt.DetectRotation(rotationStatePath, recipients)
+	if err != nil {
+		log.Fatalf("encryption rotation check: %v", err)
+	}
+	if rotated {
+		log.Println("encryption recipients changed since last run; new encrypted commits will use the updated recipient set (existing history remains decryptable by whichever recipients originally encrypted it)")
+		auditLogger.Log("encryption.key_rotation", "detected", nil)
+	}
+
 	jobQueue := queue.New(100)
+	jobQueue.StartCleanup(ctx, 10*time.Minute, 24*time.Hour)
 
 	var auth gitengine.Auth
 	if cfg.Forgejo.Token != "" {
@@ -112,9 +138,11 @@ func main() {
 	defer pool.Stop()
 
 	err = server.Start(ctx, server.Config{
-		Address:       cfg.Server.Address,
-		WebhookSecret: cfg.Forgejo.WebhookSecret,
-		Queue:         jobQueue,
+		Address:        cfg.Server.Address,
+		WebhookSecrets: cfg.WebhookSecrets(),
+		StatusToken:    cfg.Server.StatusToken,
+		Queue:          jobQueue,
+		Audit:          auditLogger,
 	})
 	if err != nil {
 		log.Fatal(err)

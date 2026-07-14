@@ -57,7 +57,7 @@ func TestEncryptAndDecrypt(t *testing.T) {
 	if _, err := os.Stat(encFilePath); os.IsNotExist(err) {
 		t.Errorf("Expected encrypted file to exist at %s, but it was missing", encFilePath)
 	}
-	
+
 	manifestPath := filepath.Join(encDir, ManifestFileName)
 	if _, err := os.Stat(manifestPath); os.IsNotExist(err) {
 		t.Errorf("Expected manifest file to exist at %s, but it was missing", manifestPath)

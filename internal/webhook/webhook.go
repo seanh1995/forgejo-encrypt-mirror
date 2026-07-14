@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/audit"
 )
 
 // EnqueueFunc accepts a normalized repository event for processing (e.g. by
@@ -13,13 +15,32 @@ type EnqueueFunc func(RepoEvent) error
 
 // Handler validates and processes incoming Forgejo webhook requests.
 type Handler struct {
-	// Secret is the shared webhook secret configured in Forgejo. If empty,
-	// signature verification is skipped (not recommended for production).
+	// Secret is the shared webhook secret configured in Forgejo. If empty
+	// and Secrets is also empty, signature verification is skipped (not
+	// recommended for production). Deprecated: set Secrets instead, which
+	// supports rotating to a new secret without downtime.
 	Secret string
+
+	// Secrets is an ordered list of currently-valid webhook secrets. A
+	// request's signature is accepted if it matches any entry, so an
+	// operator can rotate secrets by adding the new secret alongside the
+	// old one, updating Forgejo, then removing the old secret once
+	// deliveries using it have stopped.
+	Secrets []string
 
 	// Enqueue is called with the extracted repository event for each valid
 	// push event. It must not be nil.
 	Enqueue EnqueueFunc
+
+	// Replay, if set, rejects webhook deliveries whose delivery ID has
+	// already been seen, protecting against replay of a captured request.
+	// If nil, replay protection is disabled.
+	Replay *ReplayCache
+
+	// Audit, if set, records security-relevant webhook decisions
+	// (signature verification, replay detection). If nil, no audit
+	// events are recorded for this handler.
+	Audit *audit.Logger
 }
 
 // signatureHeaders lists the header names Forgejo/Gitea use for the
@@ -39,12 +60,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	defer r.Body.Close()
 
-	if h.Secret != "" {
-		if !h.verify(r, body) {
+	remote := r.RemoteAddr
+
+	secrets := h.secrets()
+	if len(secrets) > 0 {
+		if !h.verify(r, body, secrets) {
 			log.Println("webhook: signature verification failed")
+			h.audit("webhook.verify", "failure", audit.Fields{"remote": remote})
 			http.Error(w, "invalid signature", http.StatusUnauthorized)
 			return
 		}
+		h.audit("webhook.verify", "success", audit.Fields{"remote": remote})
+	}
+
+	if id := deliveryID(r.Header.Get); h.Replay != nil && h.Replay.CheckAndRemember(id) {
+		log.Printf("webhook: duplicate delivery %s ignored", id)
+		h.audit("webhook.replay", "denied", audit.Fields{"remote": remote, "deliveryId": id})
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("duplicate ignored"))
+		return
 	}
 
 	event := r.Header.Get("X-Forgejo-Event")
@@ -78,20 +112,49 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Enqueue != nil {
 		if err := h.Enqueue(repoEvent); err != nil {
 			log.Printf("webhook: failed to enqueue job for %s/%s: %v", repoEvent.Owner, repoEvent.Repo, err)
+			h.audit("webhook.enqueue", "failure", audit.Fields{"owner": repoEvent.Owner, "repo": repoEvent.Repo})
 			http.Error(w, "failed to enqueue job", http.StatusServiceUnavailable)
 			return
 		}
 	}
 
+	h.audit("webhook.enqueue", "success", audit.Fields{"owner": repoEvent.Owner, "repo": repoEvent.Repo, "branch": repoEvent.Branch, "commit": repoEvent.Commit})
+
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("ok"))
 }
 
-func (h *Handler) verify(r *http.Request, body []byte) bool {
+// secrets returns every currently-valid webhook secret, combining the
+// deprecated single Secret field with Secrets.
+func (h *Handler) secrets() []string {
+	var out []string
+	if h.Secret != "" {
+		out = append(out, h.Secret)
+	}
+	for _, s := range h.Secrets {
+		if s != "" {
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+func (h *Handler) verify(r *http.Request, body []byte, secrets []string) bool {
 	for _, name := range signatureHeaders {
 		if sig := r.Header.Get(name); sig != "" {
-			return VerifySignature(h.Secret, body, sig)
+			for _, secret := range secrets {
+				if VerifySignature(secret, body, sig) {
+					return true
+				}
+			}
+			return false
 		}
 	}
 	return false
+}
+
+func (h *Handler) audit(action, result string, fields audit.Fields) {
+	if h.Audit != nil {
+		h.Audit.Log(action, result, fields)
+	}
 }
