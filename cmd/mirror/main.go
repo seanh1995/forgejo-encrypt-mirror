@@ -11,6 +11,7 @@ import (
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/config"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/encrypt"
 	gitengine "github.com/seanh1995/forgejo-encrypt-mirror/internal/git"
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/mirror"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/queue"
 	"github.com/seanh1995/forgejo-encrypt-mirror/internal/server"
 )
@@ -64,9 +65,18 @@ func main() {
 		}
 		log.Printf("job %s: mirrored %s/%s at %s", job.ID, job.Owner, job.Repo, commit)
 
-		// TODO: build encrypted history from the mirrored commits using
-		// recipients (Phase 6) + GitHub push (Phase 7).
-		_ = recipients
+		encPath, err := engine.EncryptedPath(job.Owner, job.Repo)
+		if err != nil {
+			return err
+		}
+
+		result, err := mirror.UpdateEncryptedHistory(ctx, engine, path, commit, encPath, recipients)
+		if err != nil {
+			return err
+		}
+		log.Printf("job %s: encrypted %d commit(s) for %s/%s, HEAD now %s", job.ID, result.CommitsProcessed, job.Owner, job.Repo, result.HeadCommit)
+
+		// TODO: push the encrypted history to GitHub (Phase 7).
 		return nil
 	})
 	pool.Start()
