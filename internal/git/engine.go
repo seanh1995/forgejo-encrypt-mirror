@@ -48,6 +48,19 @@ func (e *Engine) LocalPath(owner, repo string) (string, error) {
 	return filepath.Join(e.CacheDir, owner, repo+".git"), nil
 }
 
+// EncryptedPath returns the path to the encrypted working-tree repository
+// for owner/repo within the cache directory. It validates owner and repo
+// to prevent path traversal.
+func (e *Engine) EncryptedPath(owner, repo string) (string, error) {
+	if err := ValidateName("owner", owner); err != nil {
+		return "", err
+	}
+	if err := ValidateName("repo", repo); err != nil {
+		return "", err
+	}
+	return filepath.Join(e.CacheDir, owner, repo+".enc"), nil
+}
+
 // Auth carries optional credentials for authenticating against a remote.
 // Token is sent as an HTTP "Authorization" header via git config rather
 // than embedded in the remote URL, so it never appears in process listings,
