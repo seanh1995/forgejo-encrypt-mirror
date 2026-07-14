@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
-	"log"
+	"log/slog"
+	"net/url"
 	"os"
 	"strings"
 
@@ -108,7 +110,7 @@ func warnIfInsecurePermissions(path string) {
 		return
 	}
 	if info.Mode().Perm()&0o077 != 0 {
-		log.Printf("config: warning: %s is readable by group/other (mode %v); consider restricting it to the owner only (e.g. chmod 600)", path, info.Mode().Perm())
+		slog.Warn("config file is readable by group/other; consider restricting it to the owner only (e.g. chmod 600)", "path", path, "mode", info.Mode().Perm())
 	}
 }
 
@@ -181,4 +183,38 @@ func (c *Config) GitHubDestination(sourceOwner, sourceRepo string) (owner, repo 
 	}
 
 	return owner, repo, nil
+}
+
+// Validate checks the configuration for missing or malformed required
+// fields, returning a single error aggregating every problem found (rather
+// than failing on the first) so operators can fix all issues at once.
+func (c *Config) Validate() error {
+	var problems []string
+
+	if c.Server.Address == "" {
+		problems = append(problems, "server.address must be set (e.g. \":8080\")")
+	}
+
+	if c.Forgejo.URL == "" {
+		problems = append(problems, "forgejo.url must be set")
+	} else if u, err := url.Parse(c.Forgejo.URL); err != nil {
+		problems = append(problems, fmt.Sprintf("forgejo.url is invalid: %v", err))
+	} else if u.Scheme != "http" && u.Scheme != "https" {
+		problems = append(problems, "forgejo.url must be an http(s) URL")
+	}
+
+	if c.Encryption.Recipient == "" {
+		problems = append(problems, "encryption.recipient must be set")
+	}
+
+	if c.GitHub.Token != "" {
+		if _, _, err := c.GitHubDestination("placeholder-owner", "placeholder-repo"); err != nil {
+			problems = append(problems, fmt.Sprintf("github destination configuration is invalid: %v", err))
+		}
+	}
+
+	if len(problems) > 0 {
+		return errors.New("config: " + strings.Join(problems, "; "))
+	}
+	return nil
 }

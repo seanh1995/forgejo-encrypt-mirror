@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestGitHubDestinationDefaults(t *testing.T) {
 	var cfg Config
@@ -93,5 +96,75 @@ func TestGitHubDestinationRejectsInvalidComputedName(t *testing.T) {
 
 	if _, _, err := cfg.GitHubDestination("alice", "app"); err == nil {
 		t.Fatal("expected error for computed repo name containing '/'")
+	}
+}
+
+func validConfig() Config {
+	var cfg Config
+	cfg.Server.Address = ":8080"
+	cfg.Forgejo.URL = "https://forgejo.example.com"
+	cfg.Encryption.Recipient = "age1exampleexampleexampleexampleexampleexampleexampleexamplee"
+	return cfg
+}
+
+func TestValidateAcceptsValidConfig(t *testing.T) {
+	cfg := validConfig()
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate: unexpected error: %v", err)
+	}
+}
+
+func TestValidateRequiresServerAddress(t *testing.T) {
+	cfg := validConfig()
+	cfg.Server.Address = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for missing server.address")
+	}
+}
+
+func TestValidateRequiresForgejoURL(t *testing.T) {
+	cfg := validConfig()
+	cfg.Forgejo.URL = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for missing forgejo.url")
+	}
+}
+
+func TestValidateRejectsInvalidForgejoURLScheme(t *testing.T) {
+	cfg := validConfig()
+	cfg.Forgejo.URL = "ftp://forgejo.example.com"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for non-http(s) forgejo.url")
+	}
+}
+
+func TestValidateRequiresEncryptionRecipient(t *testing.T) {
+	cfg := validConfig()
+	cfg.Encryption.Recipient = ""
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for missing encryption.recipient")
+	}
+}
+
+func TestValidateAggregatesMultipleProblems(t *testing.T) {
+	var cfg Config
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("expected error for empty config")
+	}
+	msg := err.Error()
+	for _, want := range []string{"server.address", "forgejo.url", "encryption.recipient"} {
+		if !strings.Contains(msg, want) {
+			t.Fatalf("expected error to mention %q, got: %s", want, msg)
+		}
+	}
+}
+
+func TestValidateRejectsInvalidGitHubDestinationConfig(t *testing.T) {
+	cfg := validConfig()
+	cfg.GitHub.Token = "sometoken"
+	cfg.GitHub.RepoNameFormat = "{owner}/{repo}"
+	if err := cfg.Validate(); err == nil {
+		t.Fatal("expected error for invalid github repoNameFormat")
 	}
 }

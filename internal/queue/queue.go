@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/seanh1995/forgejo-encrypt-mirror/internal/metrics"
 )
 
 // Status represents the lifecycle state of a job.
@@ -88,12 +90,25 @@ func (q *Queue) generateID() string {
 
 func (q *Queue) setStatus(job Job, status Status, errMsg string) {
 	q.mu.Lock()
-	defer q.mu.Unlock()
 	q.status[job.ID] = &Record{
 		Job:       job,
 		Status:    status,
 		Error:     errMsg,
 		UpdatedAt: time.Now(),
+	}
+	q.reportDepthLocked()
+	q.mu.Unlock()
+}
+
+// reportDepthLocked updates the queue_depth gauge from the current status
+// map. Callers must hold q.mu.
+func (q *Queue) reportDepthLocked() {
+	counts := map[Status]int{}
+	for _, rec := range q.status {
+		counts[rec.Status]++
+	}
+	for _, s := range []Status{StatusPending, StatusRunning, StatusRetrying, StatusSucceeded, StatusFailed} {
+		metrics.QueueDepth.WithLabelValues(string(s)).Set(float64(counts[s]))
 	}
 }
 
@@ -136,6 +151,9 @@ func (q *Queue) PruneOlderThan(maxAge time.Duration) int {
 			delete(q.status, id)
 			removed++
 		}
+	}
+	if removed > 0 {
+		q.reportDepthLocked()
 	}
 	return removed
 }
