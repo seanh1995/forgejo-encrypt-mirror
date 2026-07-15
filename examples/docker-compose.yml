@@ -11,7 +11,7 @@
 
 services:
   forgejo-encrypt-mirror:
-    image: ghcr.io/seanh1995/forgejo-encrypt-mirror:v1.0.0
+    image: ghcr.io/seanh1995/forgejo-encrypt-mirror:latest
     container_name: forgejo-encrypt-mirror
     restart: unless-stopped
     ports:

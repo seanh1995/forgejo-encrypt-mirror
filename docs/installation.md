@@ -41,7 +41,7 @@ Multi-arch images are published to GitHub Container Registry for `linux/amd64`,
 `linux/arm64`, and `linux/arm/v7`.
 
 ```sh
-docker pull ghcr.io/seanh1995/forgejo-encrypt-mirror:v1.0.0
+docker pull ghcr.io/seanh1995/forgejo-encrypt-mirror:latest
 ```
 
 Prepare a config file (see [configuration.md](configuration.md)) and run:
@@ -51,7 +51,7 @@ docker run -d --name forgejo-encrypt-mirror \
   -p 8080:8080 \
   -v "$(pwd)/configs/config.yaml:/app/configs/config.yaml:ro" \
   -v mirror-cache:/app/cache \
-  ghcr.io/seanh1995/forgejo-encrypt-mirror:v1.0.0
+  ghcr.io/seanh1995/forgejo-encrypt-mirror:latest
 ```
 
 Notes:

@@ -121,8 +121,12 @@ With Docker:
 docker run -p 8080:8080 \
   -v "$(pwd)/configs/config.yaml:/app/configs/config.yaml:ro" \
   -v mirror-cache:/app/cache \
-  ghcr.io/seanh1995/forgejo-encrypt-mirror:v1.0.0
+  ghcr.io/seanh1995/forgejo-encrypt-mirror:latest
 ```
+
+`latest` is fine for trying it out. In production, pin to an exact `vX.Y.Z` tag instead so
+upgrades are deliberate and rollbacks are predictable — see
+[docs/upgrade.md](docs/upgrade.md#versioning-policy).
 
 Or from source:
 
