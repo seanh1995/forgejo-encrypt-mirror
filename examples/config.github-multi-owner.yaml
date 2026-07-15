@@ -1,0 +1,43 @@
+# Multi-owner routing: mirror many Forgejo owners into a single private GitHub
+# org, with per-owner overrides and a name template that prevents collisions.
+#
+# With this config:
+#   alice/app  -> backup-org/alice-app
+#   bob/game   -> backup-org/bob-game
+#   team/docs  -> special-backups/team-docs   (via ownerMap override)
+
+server:
+  address: ":8080"
+  statusToken: "change-me-to-a-long-random-token"
+  auditLogPath: "/var/lib/forgejo-encrypt-mirror/audit.log"
+
+forgejo:
+  url: "https://forge.example.com"
+  token: "forgejo-access-token"
+  # Two secrets so you can rotate without downtime (add new, update Forgejo,
+  # then drop the old one).
+  webhookSecrets:
+    - "new-webhook-secret"
+    - "old-webhook-secret"
+
+github:
+  # Default destination org for any owner not in ownerMap.
+  owner: "backup-org"
+  # Route specific Forgejo owners elsewhere.
+  ownerMap:
+    team: "special-backups"
+  # Prefix the source owner to avoid name collisions in a shared org.
+  repoNameFormat: "{owner}-{repo}"
+  token: "github-personal-access-token"
+  autoCreate: true
+  private: true
+
+encryption:
+  # Two recipients: an operational key plus a cold escrow key. Every file is
+  # encrypted to both, so either private key can restore.
+  recipient: |
+    age1ql.....
+    age1lg.....
+
+git:
+  cacheDir: "/var/lib/forgejo-encrypt-mirror/cache"

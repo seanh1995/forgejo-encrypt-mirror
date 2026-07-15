@@ -1,0 +1,38 @@
+# Docker Compose example for forgejo-encrypt-mirror.
+#
+# Usage:
+#   cp ../configs/config.example.yaml ../configs/config.yaml
+#   # edit ../configs/config.yaml (forgejo/github tokens, webhook secret,
+#   # encryption.recipient), then:
+#   docker compose -f examples/docker-compose.yml up -d
+#
+# Run from the repository root so the ../ relative paths resolve, or adjust
+# the volume source paths to wherever your config lives.
+
+services:
+  forgejo-encrypt-mirror:
+    image: ghcr.io/seanh1995/forgejo-encrypt-mirror:v1.0.0
+    container_name: forgejo-encrypt-mirror
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # See docs/configuration.md#environment-variables
+      LOG_FORMAT: json
+      LOG_LEVEL: info
+    volumes:
+      # Config is mounted read-only at the path the binary loads by default.
+      - ../configs/config.yaml:/app/configs/config.yaml:ro
+      # Persist the cache: local mirrors, encrypted history, rotation state.
+      - mirror-cache:/app/cache
+    # The image already defines a HEALTHCHECK against /healthz; this mirrors
+    # it here for clarity / to override timing if desired.
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+volumes:
+  mirror-cache:

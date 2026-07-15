@@ -1,0 +1,51 @@
+# systemd unit for forgejo-encrypt-mirror.
+#
+# Install (see docs/installation.md#systemd):
+#   sudo cp examples/systemd/forgejo-encrypt-mirror.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now forgejo-encrypt-mirror
+#
+# Assumes the binary at /opt/forgejo-encrypt-mirror/mirror, config at
+# /opt/forgejo-encrypt-mirror/configs/config.yaml, and a dedicated 'mirror'
+# system user. The 'git' CLI must be installed on the host.
+
+[Unit]
+Description=Forgejo Encrypt Mirror
+Documentation=https://github.com/seanh1995/forgejo-encrypt-mirror
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=mirror
+Group=mirror
+WorkingDirectory=/opt/forgejo-encrypt-mirror
+ExecStart=/opt/forgejo-encrypt-mirror/mirror
+Restart=on-failure
+RestartSec=5s
+
+# Logging (structured logs go to stderr -> journald).
+Environment=LOG_FORMAT=json
+Environment=LOG_LEVEL=info
+
+# Graceful shutdown: the service drains in-flight requests on SIGTERM.
+KillSignal=SIGTERM
+TimeoutStopSec=30s
+
+# --- Sandboxing / hardening ------------------------------------------------
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+RestrictSUIDSGID=true
+LockPersonality=true
+# Allow writes only to the cache directory.
+ReadWritePaths=/opt/forgejo-encrypt-mirror/cache
+
+[Install]
+WantedBy=multi-user.target

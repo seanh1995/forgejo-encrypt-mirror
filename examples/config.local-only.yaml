@@ -1,0 +1,29 @@
+# Local-only backup: mirror + encrypt under the cache directory, but do NOT
+# push to GitHub. Useful for local/offline backups or for staging before
+# enabling off-site push. Because github.token is unset, the push step is
+# skipped by design.
+#
+# Restore any repo with:
+#   go run ./cmd/restore -identity identity.txt \
+#     -encrypted cache/<owner>/<repo>.enc -out ./restored
+
+server:
+  address: ":8080"
+  # Protect the status API if reachable off-host.
+  statusToken: "change-me-to-a-long-random-token"
+
+forgejo:
+  url: "https://forge.example.com"
+  # Only needed to mirror private repos.
+  token: "forgejo-access-token"
+  webhookSecrets:
+    - "change-me-webhook-secret"
+
+# github section omitted entirely -> no push, local encryption only.
+
+encryption:
+  # age public key (recipient). Generate with age-keygen; keep the private key offline.
+  recipient: "age1ql....."
+
+git:
+  cacheDir: "/var/lib/forgejo-encrypt-mirror/cache"

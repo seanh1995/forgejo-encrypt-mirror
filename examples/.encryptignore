@@ -1,0 +1,30 @@
+# Example .encryptignore
+#
+# Place this file at the ROOT of a SOURCE repository to exclude files from
+# encryption (and therefore from the backup). Syntax is a practical subset of
+# .gitignore:
+#   - blank lines and '#' comments are ignored
+#   - a leading '/' anchors the pattern to the repo root
+#   - '*' and '?' match within a single path segment
+#   - a trailing '/' is accepted (and stripped)
+#   - NOT supported: '**', negation ('!')
+#
+# NOTE: '.git' is always skipped automatically. Anything excluded here is NOT
+# backed up, so only exclude regenerable or intentionally-unwanted files.
+
+# Build output / dependencies (match at any depth)
+node_modules/
+vendor/
+dist/
+build/
+target/
+
+# Logs and temporary files
+*.log
+*.tmp
+
+# OS / editor cruft
+.DS_Store
+
+# A root-level directory only (anchored)
+/local-cache/
