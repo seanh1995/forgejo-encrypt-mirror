@@ -1,7 +1,12 @@
 # syntax=docker/dockerfile:1
 
 # ---- Build stage -----------------------------------------------------
-FROM golang:1.23-alpine AS builder
+# --platform=$BUILDPLATFORM pins the builder to the host arch so Go's
+# native cross-compilation (GOOS/GOARCH below) is used instead of running
+# the whole toolchain under QEMU emulation for the target arch.
+# Must match (or exceed) the `go` directive in go.mod (currently 1.26.5),
+# otherwise `go mod download`/`go build` fail with "go.mod requires go >= ...".
+FROM --platform=$BUILDPLATFORM golang:1.26.5-alpine AS builder
 
 WORKDIR /src
 
@@ -11,10 +16,23 @@ RUN go mod download
 
 COPY . .
 
+# TARGETOS/TARGETARCH/TARGETVARIANT are populated automatically by
+# buildx for each platform in --platform (see docker/setup-qemu-action +
+# docker/build-push-action in .github/workflows/docker-publish.yml).
+# Cross-compiling via native Go toolchain instead of relying purely on
+# QEMU keeps multi-arch builds fast and avoids emulated-build flakiness.
+ARG TARGETOS
+ARG TARGETARCH
+ARG TARGETVARIANT
 ARG VERSION=dev
-RUN CGO_ENABLED=0 go build \
-    -ldflags "-s -w -X main.version=${VERSION}" \
-    -o /out/mirror ./cmd/mirror
+RUN set -eux; \
+    export GOOS="${TARGETOS}" GOARCH="${TARGETARCH}"; \
+    if [ "${TARGETARCH}" = "arm" ] && [ -n "${TARGETVARIANT}" ]; then \
+        export GOARM="${TARGETVARIANT#v}"; \
+    fi; \
+    CGO_ENABLED=0 go build \
+        -ldflags "-s -w -X main.version=${VERSION}" \
+        -o /out/mirror ./cmd/mirror
 
 # ---- Runtime stage -----------------------------------------------------
 # alpine (not scratch/distroless) because the app shells out to the git
