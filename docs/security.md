@@ -5,6 +5,7 @@ protects, what it does not, how encryption and keys work, and how to operate it
 safely. For **reporting** a vulnerability, see [SECURITY.md](../SECURITY.md).
 
 - [Design goal](#design-goal)
+- [GitHub usage caveats](#github-usage-caveats)
 - [Threat model](#threat-model)
 - [What is and isn't protected](#what-is-and-isnt-protected)
 - [Encryption details](#encryption-details)
@@ -29,6 +30,34 @@ core guarantee is:
 This lets you use a third-party host (GitHub) for durable, off-site,
 version-preserving backups without trusting that host — or anyone who
 compromises it — with your source.
+
+## GitHub usage caveats
+
+This is a self-hosted tool: you run it against your own Forgejo and your own
+GitHub account/tokens, so any usage risk is yours to manage, not a hosted
+service run by this project.
+
+Nothing in GitHub's [Terms of
+Service](https://docs.github.com/en/site-policy/github-terms/github-terms-of-service)
+or [Acceptable Use
+Policies](https://docs.github.com/en/site-policy/acceptable-use-policies/github-acceptable-use-policies)
+prohibits encrypted content or mirroring specifically. Two things are still
+worth knowing before relying on this for production backups:
+
+- GitHub's own docs state **"Git is not designed to serve as a backup
+  tool"** and recommend dedicated backup products instead. Encrypted git
+  objects also don't delta-compress as well as plaintext, so mirrors can
+  grow faster than the source; keep destination repos under GitHub's
+  recommended size (ideally < 1 GB, strongly < 5 GB).
+- The Acceptable Use Policies reserve the right to throttle or suspend
+  accounts for "significantly excessive" bandwidth/storage use relative to
+  typical usage. Mirroring a handful of personal repos is normal usage;
+  running this at large scale (many repos, frequent full-history rewrites
+  on key rotation) on someone else's GitHub account is the pattern that
+  could eventually draw scrutiny.
+
+None of this is legal advice — if you're mirroring at scale or on behalf of
+others, review GitHub's current terms yourself.
 
 ## Threat model
 
