@@ -1,13 +1,25 @@
 # Docker Compose example for forgejo-encrypt-mirror.
 #
 # Usage:
-#   cp ../configs/config.example.yaml ../configs/config.yaml
+#   curl -fsSL -o ../configs/config.yaml \
+#     https://raw.githubusercontent.com/seanh1995/forgejo-encrypt-mirror/v1.0.0/configs/config.example.yaml
+#   chmod 600 ../configs/config.yaml
 #   # edit ../configs/config.yaml (forgejo/github tokens, webhook secret,
 #   # encryption.recipient), then:
 #   docker compose -f examples/docker-compose.yml up -d
 #
-# Run from the repository root so the ../ relative paths resolve, or adjust
-# the volume source paths to wherever your config lives.
+# The curl command works even without a local clone of this repo (e.g. on a
+# server that only runs the published image). Swap v1.0.0 for the release
+# you're deploying so the example matches the config fields that version
+# expects. Run from the repository root so the ../ relative paths resolve,
+# or adjust the volume source paths to wherever your config lives.
+#
+# chmod 600 alone isn't enough: the file is bind-mounted (not copied into the
+# image), so it's read by the container's non-root `mirror` user, not by
+# whichever host user ran chmod. Chown it to match, or the service logs
+# "load configuration: permission denied" and crash-loops under restart:
+#   docker run --rm --entrypoint sh ghcr.io/seanh1995/forgejo-encrypt-mirror:latest -c "id mirror"
+#   sudo chown <uid>:<gid> ../configs/config.yaml   # uid/gid printed above
 
 services:
   forgejo-encrypt-mirror:
@@ -25,6 +37,11 @@ services:
       - ../configs/config.yaml:/app/configs/config.yaml:ro
       # Persist the cache: local mirrors, encrypted history, rotation state.
       - mirror-cache:/app/cache
+    # Uncomment if the container can't resolve hostnames that work fine
+    # elsewhere on the host (see docs/operations.md#troubleshooting).
+    # dns:
+    #   - 1.1.1.1
+    #   - 9.9.9.9
     # The image already defines a HEALTHCHECK against /healthz; this mirrors
     # it here for clarity / to override timing if desired.
     healthcheck:

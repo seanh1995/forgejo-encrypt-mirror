@@ -44,7 +44,33 @@ Multi-arch images are published to GitHub Container Registry for `linux/amd64`,
 docker pull ghcr.io/seanh1995/forgejo-encrypt-mirror:latest
 ```
 
-Prepare a config file (see [configuration.md](configuration.md)) and run:
+Prepare a config file — no repo clone needed, `configs/config.example.yaml` can be
+fetched directly from GitHub:
+
+```sh
+mkdir -p configs
+curl -fsSL -o configs/config.yaml \
+  https://raw.githubusercontent.com/seanh1995/forgejo-encrypt-mirror/v1.0.0/configs/config.example.yaml
+chmod 600 configs/config.yaml
+```
+
+`chmod 600` restricts the file to its *owning* UID, which after the `curl` above
+is whatever user ran the command — not the container's non-root `mirror` user.
+Since the config is bind-mounted rather than copied into the image, the
+container reads it with its own UID and gets `permission denied` unless you
+also `chown` it to match:
+
+```sh
+# find the mirror user's UID/GID baked into the image
+docker run --rm --entrypoint sh ghcr.io/seanh1995/forgejo-encrypt-mirror:latest -c "id mirror"
+# -> e.g. uid=100(mirror) gid=101(mirror)
+
+sudo chown 100:101 configs/config.yaml   # use the numbers printed above
+```
+
+Swap `v1.0.0` for the release you're deploying so the fetched example matches
+that version's config fields. Edit `configs/config.yaml` with your real
+settings (see [configuration.md](configuration.md) for every option), then run:
 
 ```sh
 docker run -d --name forgejo-encrypt-mirror \
@@ -62,7 +88,9 @@ Notes:
   clones, the encrypted history, and the key-rotation state file. Losing it
   forces a full re-mirror on the next run (which is safe, just slower).
 - The image runs as the non-root `mirror` user and ships a `HEALTHCHECK`
-  against `/healthz`.
+  against `/healthz`. If `configs/config.yaml` isn't readable by that UID
+  (see above), the service logs `load configuration: permission denied` and
+  exits repeatedly under the container's restart policy.
 
 Image tags follow the git tags: `vX.Y.Z`, `vX.Y` (moving minor tag), plus
 `sha-<commit>`. Pin to an exact `vX.Y.Z` in production.
@@ -90,6 +118,20 @@ A ready-to-edit Compose file lives at
 ```sh
 cp configs/config.example.yaml configs/config.yaml
 # edit configs/config.yaml
+docker compose -f examples/docker-compose.yml up -d
+```
+
+Same UID caveat as above applies here: `chmod 600` plus `chown` the file to
+the image's `mirror` UID/GID before starting the stack, or the container will
+crash-loop on `permission denied`. With Compose, get the UID/GID via the
+service itself rather than a bare `docker run`:
+
+```sh
+docker compose -f examples/docker-compose.yml run --rm --entrypoint sh forgejo-encrypt-mirror -c "id mirror"
+# -> uid=100(mirror) gid=101(mirror)
+
+sudo chown 100:101 configs/config.yaml   # use the numbers printed above
+chmod 600 configs/config.yaml
 docker compose -f examples/docker-compose.yml up -d
 ```
 
