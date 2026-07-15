@@ -24,6 +24,8 @@ jobs:
       contents: write
     outputs:
       created: ${{ steps.tag.outputs.created }}
+      version: ${{ steps.tag.outputs.version }}
+      major_minor: ${{ steps.tag.outputs.major_minor }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -36,6 +38,8 @@ jobs:
           set -euo pipefail
           VERSION=$(grep -m1 -oP '^## \[\K[0-9]+\.[0-9]+\.[0-9]+(?=\])' CHANGELOG.md)
           TAG="v${VERSION}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${VERSION%.*}" >> "$GITHUB_OUTPUT"
           if git rev-parse "${TAG}" >/dev/null 2>&1; then
             echo "Tag ${TAG} already exists, skipping."
             echo "created=false" >> "$GITHUB_OUTPUT"
@@ -80,6 +84,9 @@ jobs:
             type=semver,pattern=v{{version}}
             type=semver,pattern=v{{major}}.{{minor}}
             type=sha
+            type=raw,value=v${{ needs.tag.outputs.version }},enable=${{ needs.tag.outputs.created == 'true' }}
+            type=raw,value=v${{ needs.tag.outputs.major_minor }},enable=${{ needs.tag.outputs.created == 'true' }}
+            type=raw,value=latest,enable=${{ needs.tag.outputs.created == 'true' }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
@@ -90,6 +97,6 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
-            VERSION=${{ github.ref_name }}
+            VERSION=${{ needs.tag.outputs.created == 'true' && format('v{0}', needs.tag.outputs.version) || github.ref_name }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
