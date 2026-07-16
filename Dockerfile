@@ -37,7 +37,7 @@ RUN set -eux; \
 # ---- Runtime stage -----------------------------------------------------
 # alpine (not scratch/distroless) because the app shells out to the git
 # CLI (internal/git/engine.go) to mirror/clone/push repositories.
-FROM alpine:3.20
+FROM alpine:3.24
 
 RUN apk add --no-cache ca-certificates git curl && \
     addgroup -S mirror && adduser -S mirror -G mirror
