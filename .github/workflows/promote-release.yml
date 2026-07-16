@@ -61,31 +61,6 @@ jobs:
           git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
           git push origin "${{ steps.version.outputs.tag }}"
 
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Cross-compile binaries
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.version.outputs.tag }}"
-          mkdir -p dist
-
-          build() {
-            os=$1 arch=$2 arm=$3 suffix=$4
-            GOOS="$os" GOARCH="$arch" GOARM="$arm" CGO_ENABLED=0 \
-              go build -ldflags "-s -w -X main.version=${VERSION}" \
-              -o "dist/mirror-${suffix}" ./cmd/mirror
-            GOOS="$os" GOARCH="$arch" GOARM="$arm" CGO_ENABLED=0 \
-              go build -ldflags "-s -w" \
-              -o "dist/restore-${suffix}" ./cmd/restore
-          }
-
-          build linux amd64 "" linux-amd64
-          build linux arm64 "" linux-arm64
-          build linux arm 7 linux-armv7
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -123,12 +98,6 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries
-          path: dist/*
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -137,4 +106,3 @@ jobs:
           body: ${{ steps.notes.outputs.body }}
           prerelease: false
           make_latest: true
-          files: dist/*

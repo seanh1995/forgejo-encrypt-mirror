@@ -43,8 +43,10 @@ Development follows a phased roadmap summarized in [CLAUDE.md](CLAUDE.md).
 2. Make your change with accompanying tests.
 3. Ensure the checks below pass.
 4. Open a pull request describing the change and its motivation. Reference any
-   related issue. For user-facing changes, add a `CHANGELOG.md` entry under an
-   `## [Unreleased]` heading.
+   related issue, and label it `major`, `minor`/`feature`, or `fix`/`chore` so
+   it's grouped correctly in the auto-generated release notes (see
+   [release-drafter.yml](.github/release-drafter.yml)). Use `skip-changelog` to
+   leave it out of release notes entirely.
 
 ### Checks to run before submitting
 

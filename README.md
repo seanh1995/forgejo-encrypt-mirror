@@ -175,7 +175,7 @@ full disaster-recovery walkthrough.
 | [Operations](docs/operations.md) | Endpoints, Prometheus metrics, logging, audit log, alerting |
 | [Upgrade](docs/upgrade.md) | Version policy and upgrade procedures |
 | [Examples](examples/) | Docker Compose, systemd unit, `.encryptignore`, config scenarios |
-| [Changelog](CHANGELOG.md) | Release history |
+| [Releases](https://github.com/seanh1995/forgejo-encrypt-mirror/releases) | Release history and notes |
 
 ## Contributing
 

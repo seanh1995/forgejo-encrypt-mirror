@@ -15,9 +15,6 @@ env:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      body: ${{ steps.notes.outputs.body }}
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -49,37 +46,6 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -a "${TAG}" -m "Pre-release ${TAG}"
           git push origin "${TAG}"
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - name: Cross-compile binaries
-        run: |
-          set -euo pipefail
-          VERSION="${{ steps.version.outputs.tag }}"
-          mkdir -p dist
-
-          build() {
-            os=$1 arch=$2 arm=$3 suffix=$4
-            GOOS="$os" GOARCH="$arch" GOARM="$arm" CGO_ENABLED=0 \
-              go build -ldflags "-s -w -X main.version=${VERSION}" \
-              -o "dist/mirror-${suffix}" ./cmd/mirror
-            GOOS="$os" GOARCH="$arch" GOARM="$arm" CGO_ENABLED=0 \
-              go build -ldflags "-s -w" \
-              -o "dist/restore-${suffix}" ./cmd/restore
-          }
-
-          build linux amd64 "" linux-amd64
-          build linux arm64 "" linux-arm64
-          build linux arm 7 linux-armv7
-
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries
-          path: dist/*
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -117,21 +83,10 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download binaries
-        uses: actions/download-artifact@v4
-        with:
-          name: binaries
-          path: dist
-
       - name: Create GitHub Pre-Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: Pre-Release ${{ needs.build.outputs.tag }}
-          body: ${{ needs.build.outputs.body }}
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: Pre-Release ${{ steps.version.outputs.tag }}
+          body: ${{ steps.notes.outputs.body }}
           prerelease: true
-          files: dist/*

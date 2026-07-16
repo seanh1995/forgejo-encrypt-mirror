@@ -18,13 +18,14 @@ Releases follow [Semantic Versioning](https://semver.org):
 
 - **MAJOR** (`2.0.0`) — breaking changes to config, CLI flags, on-disk cache
   layout, or the encrypted-repo format. Migration steps will be documented here
-  and in the [changelog](../CHANGELOG.md).
+  and in the [release notes](https://github.com/seanh1995/forgejo-encrypt-mirror/releases).
 - **MINOR** (`1.1.0`) — backwards-compatible features. Existing configs and
   caches keep working.
 - **PATCH** (`1.0.1`) — backwards-compatible bug/security fixes.
 
 Docker tags: pin to an exact `vX.Y.Z` in production. `vX.Y` tracks the latest
-patch of a minor line; `latest` is not published for pinning.
+patch of a minor line; `latest` tracks the most recently promoted stable
+release.
 
 Within a major version:
 
@@ -36,7 +37,7 @@ Within a major version:
 
 ## Before you upgrade
 
-1. **Read the [changelog](../CHANGELOG.md)** for the target version.
+1. **Read the [release notes](https://github.com/seanh1995/forgejo-encrypt-mirror/releases)** for the target version.
 2. **Verify a restore works** on the current version (see
    [security.md](security.md#restoring-and-disaster-recovery)) — the surest way
    to know your backups are intact before changing anything.
