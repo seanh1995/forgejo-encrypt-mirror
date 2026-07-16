@@ -179,13 +179,13 @@ full disaster-recovery walkthrough.
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+Contributions are welcome — see [CONTRIBUTING.md](.github/CONTRIBUTING.md) for the
 development workflow, coding standards, and how to run the test suite.
 
 ## Security
 
 To report a vulnerability, please follow the process in
-[SECURITY.md](SECURITY.md). Do **not** open a public issue for security reports.
+[SECURITY.md](.github/SECURITY.md). Do **not** open a public issue for security reports.
 
 ## License
 
