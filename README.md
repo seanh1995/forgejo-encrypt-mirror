@@ -13,7 +13,7 @@ names' contents.
 > working-tree files are ever pushed to the destination. Only holders of the
 > corresponding age private key can decrypt a backup.
 
-[![Docker Publish](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/docker-publish.yml/badge.svg)](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/docker-publish.yml)
+[![Pre-Release](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/pre-release.yml/badge.svg)](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/pre-release.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 ---

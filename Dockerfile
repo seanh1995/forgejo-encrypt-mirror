@@ -18,7 +18,7 @@ COPY . .
 
 # TARGETOS/TARGETARCH/TARGETVARIANT are populated automatically by
 # buildx for each platform in --platform (see docker/setup-qemu-action +
-# docker/build-push-action in .github/workflows/docker-publish.yml).
+# docker/build-push-action in .github/workflows/pre-release.yml).
 # Cross-compiling via native Go toolchain instead of relying purely on
 # QEMU keeps multi-arch builds fast and avoids emulated-build flakiness.
 ARG TARGETOS

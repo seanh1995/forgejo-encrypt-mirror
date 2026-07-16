@@ -1,4 +1,4 @@
-name: Pre-Release
+name: Promote Release
 
 permissions:
   contents: write
@@ -6,49 +6,60 @@ permissions:
   pull-requests: read
 
 on:
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      pre_release_tag:
+        description: 'Pre-release tag to promote to a stable release (e.g. v1.2.0-pre.3)'
+        required: true
 
 env:
   REGISTRY: ghcr.io
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build:
+  promote:
     runs-on: ubuntu-latest
-    outputs:
-      tag: ${{ steps.version.outputs.tag }}
-      body: ${{ steps.notes.outputs.body }}
     steps:
-      - name: Checkout Repository
+      - name: Checkout pre-release commit
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.pre_release_tag }}
           fetch-depth: 0
+
+      - name: Resolve clean version
+        id: version
+        run: |
+          set -euo pipefail
+          PRE_TAG="${{ inputs.pre_release_tag }}"
+          TAG="${PRE_TAG%%-pre.*}"
+          if [ "${TAG}" = "${PRE_TAG}" ]; then
+            echo "::error::'${PRE_TAG}' doesn't look like a pre-release tag (expected vX.Y.Z-pre.N)"
+            exit 1
+          fi
+          if git rev-parse "${TAG}" >/dev/null 2>&1; then
+            echo "::error::Tag ${TAG} already exists"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "major_minor=${TAG%.*}" >> "$GITHUB_OUTPUT"
 
       - name: Draft release notes
         id: notes
         uses: release-drafter/release-drafter@v6
         with:
           dry-run: true
+          tag: ${{ steps.version.outputs.tag }}
+          version: ${{ steps.version.outputs.tag }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Compute pre-release tag
-        id: version
+      - name: Create release tag
         run: |
           set -euo pipefail
-          # Suffixed with -pre.<run number> so this never collides with the
-          # clean vX.Y.Z tag that promote-release.yml creates on promotion.
-          TAG="v${{ steps.notes.outputs.resolved_version }}-pre.${{ github.run_number }}"
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-
-      - name: Create Tag
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.version.outputs.tag }}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "${TAG}" -m "Pre-release ${TAG}"
-          git push origin "${TAG}"
+          git tag -a "${{ steps.version.outputs.tag }}" -m "Release ${{ steps.version.outputs.tag }}"
+          git push origin "${{ steps.version.outputs.tag }}"
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -75,12 +86,6 @@ jobs:
           build linux arm64 "" linux-arm64
           build linux arm 7 linux-armv7
 
-      - name: Upload binaries
-        uses: actions/upload-artifact@v4
-        with:
-          name: binaries
-          path: dist/*
-
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -101,7 +106,8 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=${{ steps.version.outputs.tag }},priority=1000
-            type=raw,value=pre-release
+            type=raw,value=${{ steps.version.outputs.major_minor }}
+            type=raw,value=latest
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
@@ -117,21 +123,18 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download binaries
-        uses: actions/download-artifact@v4
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
         with:
           name: binaries
-          path: dist
+          path: dist/*
 
-      - name: Create GitHub Pre-Release
+      - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ needs.build.outputs.tag }}
-          name: Pre-Release ${{ needs.build.outputs.tag }}
-          body: ${{ needs.build.outputs.body }}
-          prerelease: true
+          tag_name: ${{ steps.version.outputs.tag }}
+          name: ${{ steps.version.outputs.tag }}
+          body: ${{ steps.notes.outputs.body }}
+          prerelease: false
+          make_latest: true
           files: dist/*
