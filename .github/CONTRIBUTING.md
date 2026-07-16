@@ -42,11 +42,13 @@ Development follows a phased roadmap summarized in [CLAUDE.md](CLAUDE.md).
 1. Fork and create a topic branch off `main`.
 2. Make your change with accompanying tests.
 3. Ensure the checks below pass.
-4. Open a pull request describing the change and its motivation. Reference any
-   related issue, and label it `major`, `minor`/`feature`, or `fix`/`chore` so
-   it's grouped correctly in the auto-generated release notes (see
-   [release-drafter.yml](.github/release-drafter.yml)). Use `skip-changelog` to
-   leave it out of release notes entirely.
+4. Open a pull request describing the change and its motivation, and tick the
+   matching "Type of change" checkbox in the PR template — that's read
+   automatically by [pr-labels.yml](.github/workflows/pr-labels.yml) to apply
+   the label that groups the PR correctly in the auto-generated release notes
+   (see [release-drafter.yml](.github/release-drafter.yml)). Reference any
+   related issue. Add the `skip-changelog` label to leave a PR out of release
+   notes entirely.
 
 ### Checks to run before submitting
 
@@ -76,6 +78,10 @@ Open a GitHub issue with a clear description, reproduction steps, expected vs.
 actual behavior, and your version (from the startup log or
 `forgejo_mirror_build_info`). For **security** issues, follow
 [SECURITY.md](SECURITY.md) instead — do not open a public issue.
+
+## Code of conduct
+
+This project follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 

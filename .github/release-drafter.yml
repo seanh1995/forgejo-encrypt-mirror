@@ -18,6 +18,9 @@ categories:
       - 'chore'
       - 'dependencies'
       - 'refactor'
+  - title: '📝 Documentation'
+    labels:
+      - 'documentation'
 
 version-resolver:
   major:

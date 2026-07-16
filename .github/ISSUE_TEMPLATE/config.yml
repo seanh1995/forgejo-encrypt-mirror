@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/seanh1995/forgejo-encrypt-mirror/security/advisories/new
+    about: Do not open a public issue for vulnerabilities — see SECURITY.md.
