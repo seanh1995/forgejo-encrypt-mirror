@@ -1,0 +1,137 @@
+name: Pre-Release
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+on:
+  workflow_dispatch: {}
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      body: ${{ steps.notes.outputs.body }}
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Draft release notes
+        id: notes
+        uses: release-drafter/release-drafter@v6
+        with:
+          dry-run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Compute pre-release tag
+        id: version
+        run: |
+          set -euo pipefail
+          # Suffixed with -pre.<run number> so this never collides with the
+          # final vX.Y.Z tag that docker-publish.yml cuts for the same version.
+          TAG="v${{ steps.notes.outputs.resolved_version }}-pre.${{ github.run_number }}"
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create Tag
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.version.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "${TAG}" -m "Pre-release ${TAG}"
+          git push origin "${TAG}"
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Cross-compile binaries
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.version.outputs.tag }}"
+          mkdir -p dist
+
+          build() {
+            os=$1 arch=$2 arm=$3 suffix=$4
+            GOOS="$os" GOARCH="$arch" GOARM="$arm" CGO_ENABLED=0 \
+              go build -ldflags "-s -w -X main.version=${VERSION}" \
+              -o "dist/mirror-${suffix}" ./cmd/mirror
+            GOOS="$os" GOARCH="$arch" GOARM="$arm" CGO_ENABLED=0 \
+              go build -ldflags "-s -w" \
+              -o "dist/restore-${suffix}" ./cmd/restore
+          }
+
+          build linux amd64 "" linux-amd64
+          build linux arm64 "" linux-arm64
+          build linux arm 7 linux-armv7
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries
+          path: dist/*
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.version.outputs.tag }},priority=1000
+            type=raw,value=pre-release
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64,linux/arm64,linux/arm/v7
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          annotations: ${{ steps.meta.outputs.annotations }}
+          build-args: |
+            VERSION=${{ steps.version.outputs.tag }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: binaries
+          path: dist
+
+      - name: Create GitHub Pre-Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.build.outputs.tag }}
+          name: Pre-Release ${{ needs.build.outputs.tag }}
+          body: ${{ needs.build.outputs.body }}
+          prerelease: true
+          files: dist/*
