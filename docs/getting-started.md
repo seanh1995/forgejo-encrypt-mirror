@@ -19,7 +19,8 @@ Bash or WSL rather than PowerShell/cmd.
 - [5. Run the service](#5-run-the-service)
 - [6. Add the Forgejo webhook](#6-add-the-forgejo-webhook)
 - [7. Verify end-to-end](#7-verify-end-to-end)
-- [8. Harden before relying on it](#8-harden-before-relying-on-it)
+- [8. Do a real restore](#8-do-a-real-restore)
+- [9. Harden before relying on it](#9-harden-before-relying-on-it)
 - [Common mistakes](#common-mistakes)
 
 ## Prerequisites
@@ -269,21 +270,6 @@ covers every repo under it).
 4. If GitHub is configured, open the destination repo in your browser and
    confirm it contains only `*.age` files and a `manifest.json` — **never**
    plaintext source files.
-5. Do a **test restore** now, while it's easy to compare against the source.
-   This needs to run somewhere with access to both `identity.txt` and the
-   cache — typically not inside the container:
-   ```sh
-   docker cp forgejo-encrypt-mirror:/app/cache/<owner>/<repo>.enc ./repo.enc
-   go run ./cmd/restore \
-     -identity identity.txt \
-     -encrypted ./repo.enc \
-     -out ./restored
-   diff -r ./restored /path/to/your/local/checkout
-   ```
-
-If step 5 doesn't produce an exact match, stop and fix it before trusting
-this as a backup — nothing else here matters if restore doesn't work. See
-[security.md#restoring-and-disaster-recovery](security.md#restoring-and-disaster-recovery).
 
 **Still stuck?** If nothing shows up in the logs after pushing, or the webhook
 delivery fails, check
@@ -293,7 +279,66 @@ covers the issues people actually hit at this stage, including Forgejo's
 resolution failing inside the container, and webhook 401s from a secret
 mismatch.
 
-## 8. Harden before relying on it
+## 8. Do a real restore
+
+A backup you've never restored is a backup you don't actually have. Before
+you consider this set up, prove to yourself that you can get your data back
+— using only `identity.txt` and the encrypted history, the same way you would
+in an actual emergency.
+
+The `restore` tool runs outside the container, so copy the encrypted repo out
+of the cache volume first:
+
+```sh
+docker cp forgejo-encrypt-mirror:/app/cache/<owner>/<repo>.enc ./repo.enc
+```
+
+**Restore the latest state**, and diff it against the real thing:
+
+```sh
+go run ./cmd/restore \
+  -identity identity.txt \
+  -encrypted ./repo.enc \
+  -out ./restored
+
+diff -r ./restored /path/to/your/local/checkout
+```
+
+No differences means the restore is byte-for-byte correct. If it doesn't
+match, **stop here and fix it before trusting this as a backup** — nothing
+else in this guide matters if restore doesn't actually work.
+
+**Restore a specific historical commit** — useful if you need the repo as it
+was before a bad change, not just the latest state. Find the commit in the
+*encrypted* repo's log (messages, authors, and dates are preserved verbatim),
+then pass it to `-commit`:
+
+```sh
+git -C repo.enc log --oneline
+go run ./cmd/restore \
+  -identity identity.txt \
+  -encrypted ./repo.enc \
+  -out ./restored-at-abc123 \
+  -commit abc123
+```
+
+**Restore after losing the local cache** — this is the scenario the whole
+off-site copy exists for. If the machine running the service (and its
+`cacheDir`) is gone, clone the encrypted history back from GitHub instead of
+`docker cp`-ing it, then restore exactly as above:
+
+```sh
+git clone https://github.com/<owner>/<repo>.git ./repo.enc
+go run ./cmd/restore -identity identity.txt -encrypted ./repo.enc -out ./restored
+```
+
+This only requires `identity.txt` — no running service, no Forgejo access, no
+cache. Put a reminder somewhere (calendar, runbook) to repeat this restore
+check periodically, not just today. See
+[security.md#restoring-and-disaster-recovery](security.md#restoring-and-disaster-recovery)
+for more detail.
+
+## 9. Harden before relying on it
 
 Run through the full checklist in
 [security.md#hardening-checklist](security.md#hardening-checklist) — in short:
