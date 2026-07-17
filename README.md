@@ -91,64 +91,28 @@ backup can be decrypted back into an exact copy of the tree at any commit. See
 
 ## Quick start
 
-### 1. Generate an age keypair
-
-The **public key** (recipient) goes in the service config. Keep the **private
-key** (identity) offline and safe — it is the only thing that can decrypt your
-backups.
-
-```sh
-go run filippo.io/age/cmd/age-keygen@latest -o identity.txt
-# Public key: age1ql3z7hjy54pw3hyww5ayyfg7zqgvc7w3j2elw8zmrj2kg5sfn9aqmcac8p
-```
-
-### 2. Configure
-
 ```sh
 cp configs/config.example.yaml configs/config.yaml
 chmod 600 configs/config.yaml
-```
+# edit configs/config.yaml: Forgejo URL/token, a webhook secret, your age
+# recipient, and (for off-site push) a GitHub token and destination
 
-Fill in your Forgejo URL and token, a webhook secret, the age recipient (public
-key), and — if you want off-site push — your GitHub token and destination. See
-[docs/configuration.md](docs/configuration.md) for every option.
-
-### 3. Run
-
-With Docker:
-
-```sh
 docker run -p 8080:8080 \
   -v "$(pwd)/configs/config.yaml:/app/configs/config.yaml:ro" \
   -v mirror-cache:/app/cache \
   ghcr.io/seanh1995/forgejo-encrypt-mirror:latest
 ```
 
-`latest` is fine for trying it out. In production, pin to an exact `vX.Y.Z` tag instead so
-upgrades are deliberate and rollbacks are predictable — see
-[docs/upgrade.md](docs/upgrade.md#versioning-policy).
+`latest` is fine for trying it out; pin to an exact `vX.Y.Z` tag in production
+(see [docs/upgrade.md](docs/upgrade.md#versioning-policy)).
 
-Or from source:
-
-```sh
-go run ./cmd/mirror
-```
-
-### 4. Point Forgejo at it
-
-In your repository (or org) settings, add a webhook:
-
-- **Target URL:** `http://<host>:8080/webhook`
-- **HTTP Method:** `POST`
-- **Content type:** `application/json`
-- **Secret:** the value you set in `forgejo.webhookSecrets`
-- **Trigger:** *Push events*
-
-Push a commit and watch the logs — the encrypted mirror appears under `cache/`
-and (if configured) on GitHub.
-
-See the full [installation guide](docs/installation.md) for systemd,
-Docker Compose, and Kubernetes deployments.
+That's the shape of it — but you'll also need an age keypair and a Forgejo
+webhook pointed at `/webhook` before it does anything. For the full,
+click-by-click walkthrough (generating keys, creating tokens, adding the
+webhook, verifying a restore), see
+**[docs/getting-started.md](docs/getting-started.md)**. For systemd, Docker
+Compose, and Kubernetes deployments instead of plain Docker, see the
+[installation guide](docs/installation.md).
 
 ## Restoring a backup
 
@@ -169,6 +133,7 @@ full disaster-recovery walkthrough.
 
 | Guide | What it covers |
 |-------|----------------|
+| [Getting Started](docs/getting-started.md) | Ordered, first-time walkthrough from age keys to a verified mirror |
 | [Installation](docs/installation.md) | Source, prebuilt binary, Docker, Compose, systemd, Kubernetes |
 | [Configuration](docs/configuration.md) | Every config field, environment variables, `.encryptignore` |
 | [Security](docs/security.md) | Threat model, key management, rotation, restore, hardening |
