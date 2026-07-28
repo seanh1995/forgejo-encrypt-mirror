@@ -6,15 +6,25 @@ An automated, encrypted backup service for Forgejo/Gitea repositories.
 **[age](https://age-encryption.org)-encrypted git history** and — optionally —
 pushes that encrypted history to GitHub (or any git remote). GitHub becomes an
 off-site backup that holds a full, versioned copy of your repositories while
-never seeing a single byte of your plaintext code, commit contents, or file
-names' contents.
+never seeing a single byte of plaintext file content.
 
-> **Security-first by design:** no plaintext git objects, file contents, or
-> working-tree files are ever pushed to the destination. Only holders of the
-> corresponding age private key can decrypt a backup.
+> **Security-first by design:** no plaintext file contents or working-tree
+> files are ever pushed to the destination — every file is age-encrypted
+> before it leaves the machine. File/directory names, commit messages, and
+> commit metadata are **not** encrypted (see
+> [docs/security.md](docs/security.md#what-is-and-isnt-protected) for the full
+> breakdown); only holders of the corresponding age private key can decrypt
+> file contents.
 
-[![Pre-Release](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/pre-release.yml/badge.svg)](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/pre-release.yml)
+[![CI](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/ci.yml/badge.svg)](https://github.com/seanh1995/forgejo-encrypt-mirror/actions/workflows/ci.yml)
+[![Latest Release](https://img.shields.io/github/v/release/seanh1995/forgejo-encrypt-mirror)](https://github.com/seanh1995/forgejo-encrypt-mirror/releases)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/seanh1995/forgejo-encrypt-mirror)](go.mod)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+> **Disclaimer:** This project was built with heavy assistance from AI coding
+> tools, used as a learning exercise to explore Go, encryption, and CI/CD
+> practices. Review the code yourself before relying on it, especially for
+> anything security-sensitive.
 
 ---
 
