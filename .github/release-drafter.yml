@@ -1,44 +1,56 @@
 name-template: 'v$RESOLVED_VERSION'
 tag-template: 'v$RESOLVED_VERSION'
 change-template: '- $TITLE (#$NUMBER) @$AUTHOR'
-exclude-labels:
-  - 'skip-changelog'
 
 categories:
+  - type: 'pre-exclude'
+    when:
+      label: 'skip-changelog'
+
   - title: '🚀 Features'
-    labels:
-      - 'feature'
-      - 'enhancement'
+    when:
+      labels:
+        - 'feature'
+        - 'enhancement'
   - title: '🐛 Bug Fixes'
-    labels:
-      - 'fix'
-      - 'bug'
+    when:
+      labels:
+        - 'fix'
+        - 'bug'
   - title: '🧰 Maintenance'
-    labels:
-      - 'chore'
-      - 'dependencies'
-      - 'refactor'
+    when:
+      labels:
+        - 'chore'
+        - 'dependencies'
+        - 'refactor'
   - title: '📝 Documentation'
-    labels:
-      - 'documentation'
+    when:
+      labels:
+        - 'documentation'
+
+  - type: 'version-resolver'
+    semver-increment: 'major'
+    when:
+      label: 'major'
+  - type: 'version-resolver'
+    semver-increment: 'minor'
+    when:
+      labels:
+        - 'minor'
+        - 'feature'
+        - 'enhancement'
+  - type: 'version-resolver'
+    semver-increment: 'patch'
+    when:
+      labels:
+        - 'patch'
+        - 'fix'
+        - 'bug'
+        - 'chore'
+        - 'dependencies'
+        - 'refactor'
 
 version-resolver:
-  major:
-    labels:
-      - 'major'
-  minor:
-    labels:
-      - 'minor'
-      - 'feature'
-      - 'enhancement'
-  patch:
-    labels:
-      - 'patch'
-      - 'fix'
-      - 'bug'
-      - 'chore'
-      - 'dependencies'
-      - 'refactor'
   default: patch
 
 template: |
