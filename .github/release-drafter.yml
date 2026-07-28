@@ -32,6 +32,7 @@ categories:
     semver-increment: 'major'
     when:
       label: 'major'
+      labels-mode: 'only'
   - type: 'version-resolver'
     semver-increment: 'minor'
     when:
@@ -39,6 +40,7 @@ categories:
         - 'minor'
         - 'feature'
         - 'enhancement'
+      labels-mode: 'only'
   - type: 'version-resolver'
     semver-increment: 'patch'
     when:
