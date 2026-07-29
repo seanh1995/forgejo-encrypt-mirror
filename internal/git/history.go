@@ -176,6 +176,9 @@ func extractTar(r io.Reader, destDir string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
+			if err := safeLinkTarget(destDir, target, hdr.Linkname); err != nil {
+				return err
+			}
 			// Remove any existing entry before recreating the symlink.
 			_ = os.Remove(target)
 			if err := os.Symlink(hdr.Linkname, target); err != nil {
