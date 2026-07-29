@@ -138,6 +138,14 @@ func (e *Engine) ExportTree(ctx context.Context, repoPath, commit, destDir strin
 func extractTar(r io.Reader, destDir string) error {
 	tr := tar.NewReader(r)
 
+	// Resolve destDir to its canonical real path once so that all
+	// subsequent symlink-safety checks compare against the same base,
+	// even when destDir itself contains symlink components.
+	realDestDir, err := filepath.EvalSymlinks(destDir)
+	if err != nil {
+		return fmt.Errorf("git: resolve dest dir: %w", err)
+	}
+
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
@@ -182,7 +190,7 @@ func extractTar(r io.Reader, destDir string) error {
 			if err != nil {
 				return err
 			}
-			relParent, err := filepath.Rel(destDir, realParent)
+			relParent, err := filepath.Rel(realDestDir, realParent)
 			if err != nil || strings.HasPrefix(filepath.Clean(relParent), "..") {
 				return fmt.Errorf("git: unsafe archive entry %q", hdr.Name)
 			}
@@ -194,7 +202,7 @@ func extractTar(r io.Reader, destDir string) error {
 			// Verify the symlink target, resolved from the symlink's real
 			// parent directory, does not escape destDir.
 			resolvedLink := filepath.Clean(filepath.Join(realParent, filepath.FromSlash(hdr.Linkname)))
-			relLink, err := filepath.Rel(destDir, resolvedLink)
+			relLink, err := filepath.Rel(realDestDir, resolvedLink)
 			if err != nil || strings.HasPrefix(filepath.Clean(relLink), "..") {
 				return fmt.Errorf("git: unsafe symlink target %q in entry %q", hdr.Linkname, hdr.Name)
 			}
