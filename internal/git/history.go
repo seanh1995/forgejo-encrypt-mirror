@@ -176,6 +176,28 @@ func extractTar(r io.Reader, destDir string) error {
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
+			// Resolve any pre-existing symlinks in the parent directory to
+			// prevent directory-traversal via chained symlinks (CWE-22).
+			realParent, err := filepath.EvalSymlinks(filepath.Dir(target))
+			if err != nil {
+				return err
+			}
+			relParent, err := filepath.Rel(destDir, realParent)
+			if err != nil || strings.HasPrefix(filepath.Clean(relParent), "..") {
+				return fmt.Errorf("git: unsafe archive entry %q", hdr.Name)
+			}
+			target = filepath.Join(realParent, filepath.Base(target))
+			// Reject absolute symlink targets; they always escape the archive root.
+			if filepath.IsAbs(hdr.Linkname) {
+				return fmt.Errorf("git: unsafe symlink target %q in entry %q", hdr.Linkname, hdr.Name)
+			}
+			// Verify the symlink target, resolved from the symlink's real
+			// parent directory, does not escape destDir.
+			resolvedLink := filepath.Clean(filepath.Join(realParent, filepath.FromSlash(hdr.Linkname)))
+			relLink, err := filepath.Rel(destDir, resolvedLink)
+			if err != nil || strings.HasPrefix(filepath.Clean(relLink), "..") {
+				return fmt.Errorf("git: unsafe symlink target %q in entry %q", hdr.Linkname, hdr.Name)
+			}
 			// Remove any existing entry before recreating the symlink.
 			_ = os.Remove(target)
 			if err := os.Symlink(hdr.Linkname, target); err != nil {
