@@ -134,7 +134,8 @@ func (e *Engine) ExportTree(ctx context.Context, repoPath, commit, destDir strin
 
 // extractTar writes the contents of the tar stream r into destDir,
 // recreating directories, regular files, and symlinks. It rejects any
-// entry whose name would escape destDir.
+// entry whose name contains a directory-traversal element, and any
+// symlink whose target would resolve outside destDir.
 func extractTar(r io.Reader, destDir string) error {
 	tr := tar.NewReader(r)
 
@@ -147,10 +148,10 @@ func extractTar(r io.Reader, destDir string) error {
 			return err
 		}
 
-		target, err := safeJoin(destDir, hdr.Name)
-		if err != nil {
-			return err
+		if strings.Contains(hdr.Name, "..") {
+			return fmt.Errorf("git: unsafe archive entry %q", hdr.Name)
 		}
+		target := filepath.Join(destDir, filepath.FromSlash(hdr.Name))
 
 		switch hdr.Typeflag {
 		case tar.TypeDir:
@@ -173,20 +174,15 @@ func extractTar(r io.Reader, destDir string) error {
 				return err
 			}
 		case tar.TypeSymlink:
-			// hdr.Linkname is attacker-controlled archive content, just like
-			// hdr.Name: an absolute linkname points outside destDir
-			// directly, and a relative one is resolved against the
-			// symlink's own directory, so both must be checked before the
-			// symlink is created, not just the symlink's own path.
-			if filepath.IsAbs(filepath.FromSlash(hdr.Linkname)) {
-				return fmt.Errorf("git: unsafe symlink target %q for entry %q", hdr.Linkname, hdr.Name)
-			}
-			if _, err := safeJoin(destDir, filepath.Join(filepath.Dir(hdr.Name), hdr.Linkname)); err != nil {
-				return fmt.Errorf("git: unsafe symlink target %q for entry %q: %w", hdr.Linkname, hdr.Name, err)
-			}
-
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
+			}
+			// Both the symlink's own location and its target are
+			// attacker-controlled archive content, and must be resolved
+			// (not just syntactically cleaned) before the symlink is
+			// created: see isRel.
+			if !isRel(filepath.Dir(hdr.Name), destDir) || !isRel(hdr.Linkname, filepath.Dir(target)) {
+				return fmt.Errorf("git: unsafe symlink target %q for entry %q", hdr.Linkname, hdr.Name)
 			}
 			// Remove any existing entry before recreating the symlink.
 			_ = os.Remove(target)
@@ -200,20 +196,27 @@ func extractTar(r io.Reader, destDir string) error {
 	}
 }
 
-// safeJoin joins base and name, rejecting any result that would escape
-// base via ".." segments or an absolute path.
-func safeJoin(base, name string) (string, error) {
-	if filepath.IsAbs(filepath.FromSlash(name)) {
-		return "", fmt.Errorf("git: unsafe archive entry %q", name)
+// isRel reports whether candidate, joined onto root and resolved through
+// any symlinks already present on disk, stays within root. A purely
+// syntactic check (filepath.Clean plus strings.HasPrefix on the
+// unresolved path) is not sufficient here: an archive can chain two
+// symlinks so that a syntactically-safe-looking relative path actually
+// resolves outside root once real, previously-extracted symlinks are
+// followed, so real resolution via filepath.EvalSymlinks is required.
+func isRel(candidate, root string) bool {
+	if filepath.IsAbs(filepath.FromSlash(candidate)) {
+		return false
 	}
-
-	target := filepath.Join(base, filepath.FromSlash(name))
-	cleanBase := filepath.Clean(base)
-	if target != cleanBase && !strings.HasPrefix(target, cleanBase+string(filepath.Separator)) {
-		return "", fmt.Errorf("git: unsafe archive entry %q", name)
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return false
 	}
-
-	return target, nil
+	realPath, err := filepath.EvalSymlinks(filepath.Join(root, candidate))
+	if err != nil {
+		return false
+	}
+	relPath, err := filepath.Rel(realRoot, realPath)
+	return err == nil && relPath != ".." && !strings.HasPrefix(filepath.Clean(relPath), ".."+string(filepath.Separator))
 }
 
 // ClearWorkingTree removes every entry in dir except ".git", so a working
