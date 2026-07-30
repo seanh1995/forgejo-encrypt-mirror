@@ -173,6 +173,18 @@ func extractTar(r io.Reader, destDir string) error {
 				return err
 			}
 		case tar.TypeSymlink:
+			// hdr.Linkname is attacker-controlled archive content, just like
+			// hdr.Name: an absolute linkname points outside destDir
+			// directly, and a relative one is resolved against the
+			// symlink's own directory, so both must be checked before the
+			// symlink is created, not just the symlink's own path.
+			if filepath.IsAbs(filepath.FromSlash(hdr.Linkname)) {
+				return fmt.Errorf("git: unsafe symlink target %q for entry %q", hdr.Linkname, hdr.Name)
+			}
+			if _, err := safeJoin(destDir, filepath.Join(filepath.Dir(hdr.Name), hdr.Linkname)); err != nil {
+				return fmt.Errorf("git: unsafe symlink target %q for entry %q: %w", hdr.Linkname, hdr.Name, err)
+			}
+
 			if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 				return err
 			}
@@ -188,14 +200,20 @@ func extractTar(r io.Reader, destDir string) error {
 	}
 }
 
-// safeJoin joins base and name, rejecting any name that would escape base
-// via ".." segments or an absolute path.
+// safeJoin joins base and name, rejecting any result that would escape
+// base via ".." segments or an absolute path.
 func safeJoin(base, name string) (string, error) {
-	cleaned := filepath.Clean(filepath.FromSlash(name))
-	if filepath.IsAbs(cleaned) || strings.HasPrefix(cleaned, ".."+string(filepath.Separator)) || cleaned == ".." {
+	if filepath.IsAbs(filepath.FromSlash(name)) {
 		return "", fmt.Errorf("git: unsafe archive entry %q", name)
 	}
-	return filepath.Join(base, cleaned), nil
+
+	target := filepath.Join(base, filepath.FromSlash(name))
+	cleanBase := filepath.Clean(base)
+	if target != cleanBase && !strings.HasPrefix(target, cleanBase+string(filepath.Separator)) {
+		return "", fmt.Errorf("git: unsafe archive entry %q", name)
+	}
+
+	return target, nil
 }
 
 // ClearWorkingTree removes every entry in dir except ".git", so a working
