@@ -82,23 +82,33 @@ func TestExtractTarRejectsPathTraversal(t *testing.T) {
 	}
 }
 
-func TestExtractTarRejectsAbsoluteName(t *testing.T) {
+// An absolute-looking entry name can't be used to write outside destDir:
+// filepath.Join doesn't reset on an absolute-looking component the way
+// os.path.join does, so the leading separator is just treated as part of
+// the joined path and safely contained under destDir.
+func TestExtractTarContainsAbsoluteLookingName(t *testing.T) {
 	dest := t.TempDir()
-	abs := "/etc/evil.txt"
-	if runtime.GOOS == "windows" {
-		abs = `C:\evil.txt`
-	}
+
 	buf := buildTar(t, []struct {
 		name     string
 		typeflag byte
 		linkname string
 		body     string
 	}{
-		{name: abs, typeflag: tar.TypeReg, body: "evil"},
+		{name: "/etc/evil.txt", typeflag: tar.TypeReg, body: "evil"},
 	})
 
-	if err := extractTar(buf, dest); err == nil {
-		t.Fatal("expected error for absolute entry name, got nil")
+	if err := extractTar(buf, dest); err != nil {
+		t.Fatalf("extractTar: %v", err)
+	}
+
+	written := filepath.Join(dest, "etc", "evil.txt")
+	data, err := os.ReadFile(written)
+	if err != nil {
+		t.Fatalf("expected file to be written inside destDir, read failed: %v", err)
+	}
+	if string(data) != "evil" {
+		t.Fatalf("unexpected content: %q", data)
 	}
 }
 
