@@ -33,9 +33,13 @@ jobs:
         id: version
         run: |
           set -euo pipefail
-          # Suffixed with -pre.<run number> so this never collides with the
-          # clean vX.Y.Z tag that promote-release.yml creates on promotion.
-          TAG="v${{ steps.notes.outputs.resolved_version }}-pre.${{ github.run_number }}"
+          # Suffixed with -pre.<n>, numbered per-version starting at 1 (not
+          # the workflow run number), so this never collides with the clean
+          # vX.Y.Z tag that promote-release.yml creates on promotion.
+          PREFIX="v${{ steps.notes.outputs.resolved_version }}-pre."
+          LAST="$(git tag --list "${PREFIX}*" | sed "s/^${PREFIX}//" | sort -n | tail -1)"
+          NEXT=$((${LAST:-0} + 1))
+          TAG="${PREFIX}${NEXT}"
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
 
       - name: Create Tag
